@@ -11,11 +11,30 @@ st.caption("Versión resumida. Datos de Yahoo Finance (NY) y ArgentinaDatos. "
            "Informativo, no es recomendación de inversión.")
 
 # Lista de ejemplo: confirmá en BYMA / tu broker cuáles tienen CEDEAR vigente.
-TICKERS = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "NFLX", "AMD", "MELI",
-    "KO", "PEP", "JNJ", "MCD", "WMT", "DIS", "JPM", "V", "XOM", "CVX",
-    "PFE", "MRK", "BABA", "PLTR", "COIN", "INTC", "PYPL", "NKE", "BA", "VZ",
-]
+# ticker: (nombre, sector)
+INFO = {
+    "AAPL": ("Apple", "Tecnología"), "MSFT": ("Microsoft", "Tecnología"),
+    "NVDA": ("NVIDIA", "Tecnología"), "AMD": ("AMD", "Tecnología"),
+    "PLTR": ("Palantir", "Tecnología"), "INTC": ("Intel", "Tecnología"),
+    "GOOGL": ("Alphabet (Google)", "Comunicación"), "META": ("Meta Platforms", "Comunicación"),
+    "NFLX": ("Netflix", "Comunicación"), "DIS": ("Walt Disney", "Comunicación"),
+    "VZ": ("Verizon", "Comunicación"),
+    "AMZN": ("Amazon", "Consumo discrecional"), "TSLA": ("Tesla", "Consumo discrecional"),
+    "MELI": ("MercadoLibre", "Consumo discrecional"), "MCD": ("McDonald's", "Consumo discrecional"),
+    "BABA": ("Alibaba", "Consumo discrecional"), "NKE": ("Nike", "Consumo discrecional"),
+    "KO": ("Coca-Cola", "Consumo básico"), "PEP": ("PepsiCo", "Consumo básico"),
+    "WMT": ("Walmart", "Consumo básico"),
+    "JNJ": ("Johnson & Johnson", "Salud"), "PFE": ("Pfizer", "Salud"), "MRK": ("Merck", "Salud"),
+    "JPM": ("JPMorgan Chase", "Financiero"), "V": ("Visa", "Financiero"),
+    "COIN": ("Coinbase", "Financiero"), "PYPL": ("PayPal", "Financiero"),
+    "XOM": ("Exxon Mobil", "Energía"), "CVX": ("Chevron", "Energía"),
+    "BA": ("Boeing", "Industriales"),
+}
+TICKERS = list(INFO)
+
+# Parámetros fijos (no se muestran en pantalla)
+RSI_BAJO, RSI_ALTO = 30, 70      # verde (sobreventa) / rojo (sobrecompra)
+MIN_VOLUMEN_USD_M = 100          # volumen mínimo diario en NY: descarta CEDEARs con poca liquidez
 
 
 # ----------------------------------------------------------------------------
@@ -28,14 +47,15 @@ def rsi(s, n=14):
     return 100 - 100 / (1 + up / dn)
 
 
-def senal_rsi(x):
-    if pd.isna(x):
+def etiqueta_rsi(v, lo=30, hi=70):
+    """Texto único: valor + señal, por ejemplo '28.4  🟢 Sobreventa'."""
+    if pd.isna(v):
         return "-"
-    if x > 70:
-        return "🔴 Sobrecompra"
-    if x < 30:
-        return "🟢 Sobreventa"
-    return "⚪ Neutral"
+    if v < lo:
+        return f"{v:.1f}  🟢 Sobreventa"
+    if v > hi:
+        return f"{v:.1f}  🔴 Sobrecompra"
+    return f"{v:.1f}  ⚪ Neutral"
 
 
 def tea(tna, m):
@@ -63,13 +83,13 @@ def ytm(precio, tiempos, flujos):
     return (lo + hi) / 2
 
 
-def color_rsi(v):
+def color_rsi(v, lo=30, hi=70):
     if pd.isna(v):
         return ""
-    if v > 70:
-        return "background-color: #ffcdd2"
-    if v < 30:
-        return "background-color: #c8e6c9"
+    if v < lo:
+        return "background-color: #a5d6a7; font-weight: 600"
+    if v > hi:
+        return "background-color: #ef9a9a; font-weight: 600"
     return ""
 
 
@@ -107,6 +127,30 @@ def dividendos_12m(tickers):
         except Exception:
             out[t] = np.nan
     return out
+
+
+@st.cache_data(ttl=300, show_spinner="Descargando datos intradiarios...")
+def rsi_45m(tickers):
+    """RSI(14) sobre velas de 45 min, armadas agrupando de a 3 velas de 15 min por rueda."""
+    d = yf.download(list(tickers), period="1mo", interval="15m", auto_adjust=True, progress=False)["Close"]
+    out, ultima = {}, None
+    for t in d.columns:
+        s = d[t].dropna()
+        if len(s) < 60:
+            out[t] = np.nan
+            continue
+        # Yahoo puede entregar la hora en UTC: se pasa siempre a hora de Nueva York
+        idx = s.index.tz_localize("UTC") if s.index.tz is None else s.index
+        s.index = idx.tz_convert("America/New_York")
+        dia = np.array(s.index.date)
+        # Bloque de 45 min según la hora (9:30 NY = 570 min), no por conteo de velas:
+        # así, si Yahoo omite una vela de 15 min, el resto no se desfasa.
+        minutos = s.index.hour * 60 + s.index.minute - 570
+        bloque = np.asarray(minutos // 45)
+        c45 = s.groupby([dia, bloque]).last()
+        out[t] = float(rsi(c45).iloc[-1])
+        ultima = s.index[-1] if ultima is None or s.index[-1] > ultima else ultima
+    return pd.Series(out), ultima
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner="Descargando datos fundamentales...")
@@ -179,62 +223,83 @@ def riesgo_pais():
 # Pestañas
 # ----------------------------------------------------------------------------
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📈 CEDEARs: RSI y dividendos", "⚖️ ¿Cara o barata?", "🏦 Ranking FCI",
+    "📈 CEDEARs: Trading (RSI)", "💰 CEDEARs: Dividendos y ¿cara o barata?", "🏦 Ranking FCI",
     "🧮 Simulador de tasas", "💵 Renta fija",
 ])
 
 close, vol = precios(tuple(TICKERS))
 close = close.dropna(axis=1, how="all")
 tabla = pd.DataFrame({
-    "Precio USD": close.iloc[-1],
-    "Volatilidad %": close.pct_change().tail(60).std() * np.sqrt(252) * 100,
-    "Volumen USD (M)": (close * vol[close.columns]).tail(30).mean() / 1e6,
-    "RSI (14)": close.apply(rsi).iloc[-1],
-})
-divs = dividendos_12m(tuple(tabla.index))
-tabla["Div. 12m USD"] = pd.Series(divs)
-tabla["Yield 12m %"] = tabla["Div. 12m USD"] / tabla["Precio USD"] * 100
-tabla["Señal RSI"] = tabla["RSI (14)"].apply(senal_rsi)
+    "Nombre": [INFO[t][0] for t in close.columns],
+    "Sector": [INFO[t][1] for t in close.columns],
+    "Precio USD": close.iloc[-1].values,
+    "Volatilidad %": (close.pct_change().tail(60).std() * np.sqrt(252) * 100).values,
+    "Volumen USD (M)": ((close * vol[close.columns]).tail(30).mean() / 1e6).values,
+    "RSI diario": close.apply(rsi).iloc[-1].values,
+}, index=close.columns)
 tabla.index.name = "Ticker"
 
-# --- 1. CEDEARs --------------------------------------------------------------
+try:
+    r45, ult_intra = rsi_45m(tuple(tabla.index))
+    tabla["RSI 45 min"] = r45.reindex(tabla.index)
+except Exception:
+    ult_intra = None
+    tabla["RSI 45 min"] = np.nan
+
+# --- 1. CEDEARs: trading ------------------------------------------------------
 with tab1:
-    st.write(f"Última rueda con datos: **{close.index[-1].date()}**")
-    c1, c2, c3 = st.columns(3)
-    top = c1.slider("Mostrar las N más volátiles", 3, len(tabla), len(tabla))
-    min_vol = c2.slider("Volumen mínimo diario (USD millones)", 0, 500, 0, step=10)
-    filtro = c3.selectbox("Señal RSI", ["Todas", "Sobrecompra", "Sobreventa"])
+    st.subheader("Trading: RSI diario y de 45 minutos")
+    txt = f"Datos diarios al **{close.index[-1].date()}**"
+    if ult_intra is not None:
+        txt += f" · intradiario hasta **{ult_intra:%d/%m %H:%M}** (hora de Nueva York)"
+    else:
+        txt += " · RSI de 45 min no disponible ahora"
+    st.write(txt)
 
-    v = tabla[tabla["Volumen USD (M)"] >= min_vol].sort_values("Volatilidad %", ascending=False)
-    if filtro == "Sobrecompra":
-        v = v[v["RSI (14)"] > 70]
-    elif filtro == "Sobreventa":
-        v = v[v["RSI (14)"] < 30]
-    v = v.head(top)
+    lo, hi = RSI_BAJO, RSI_ALTO
+    c1, c2 = st.columns(2)
+    vol_min = c1.slider("Volatilidad mínima % (descarta las que casi no se mueven)", 0, 100, 30, step=5)
+    filtro = c2.selectbox("Mostrar", ["Todas", "Solo sobreventa (RSI verde)", "Solo sobrecompra (RSI rojo)"])
 
-    st.dataframe(
-        v.style.map(color_rsi, subset=["RSI (14)"])
-        .map(color_yield, subset=["Yield 12m %"])
-        .format(precision=2, na_rep="-"),
-        width="stretch",
-    )
+    t = tabla[(tabla["Volatilidad %"] >= vol_min) & (tabla["Volumen USD (M)"] >= MIN_VOLUMEN_USD_M)]
+    if filtro.startswith("Solo sobreventa"):
+        t = t[(t["RSI diario"] < lo) | (t["RSI 45 min"] < lo)]
+    elif filtro.startswith("Solo sobrecompra"):
+        t = t[(t["RSI diario"] > hi) | (t["RSI 45 min"] > hi)]
+
+    cols_t = ["Nombre", "Precio USD", "Volatilidad %", "RSI diario", "RSI 45 min"]
+    cols_rsi = ["RSI diario", "RSI 45 min"]
+    st.caption(f"{len(t)} de {len(tabla)} CEDEARs pasan los filtros, agrupados por sector.")
+    for sector in sorted(t["Sector"].unique()):
+        sub = t[t["Sector"] == sector].sort_values("Volatilidad %", ascending=False)[cols_t]
+        with st.expander(f"{sector} ({len(sub)})", expanded=True):
+            st.dataframe(
+                sub.style
+                .map(lambda v: color_rsi(v, lo, hi), subset=cols_rsi)
+                .format(lambda v: etiqueta_rsi(v, lo, hi), subset=cols_rsi)
+                .format(precision=2, na_rep="-", subset=["Precio USD", "Volatilidad %"]),
+                width="stretch",
+            )
     st.markdown(
-        "**RSI:** 🔴 >70 sobrecompra · 🟢 <30 sobreventa. "
-        "**Yield:** gris no paga · rojo <1,5% · amarillo 1,5–3% · verde 3–6% · naranja ≥6% (revisar por qué es tan alto).  \n"
-        "Volatilidad: desvío de retornos diarios de 60 ruedas, anualizado. "
-        "El yield es bruto, sobre la acción en NY; el CEDEAR cobra en pesos y con retención en origen."
+        "**RSI:** 🟢 verde = sobreventa (menor a 30) · 🔴 rojo = sobrecompra (mayor a 70).  \n"
+        "**RSI 45 min:** velas de 45 minutos armadas desde datos de 15 min (datos de Yahoo, pueden tener demora). "
+        "Sirve para operar en el día; fuera del horario de NY muestra la última rueda.  \n"
+        "**Volatilidad:** desvío de retornos diarios de 60 ruedas, anualizado. Descartar las de baja volatilidad evita "
+        "activos que casi no se mueven y dan pocas señales."
     )
 
-# --- 2. Cara o barata --------------------------------------------------------
+# --- 2. CEDEARs: dividendos + cara o barata -----------------------------------
 with tab2:
-    st.subheader("Valuación relativa dentro de la lista")
+    st.subheader("Dividendos (largo plazo) y valuación")
     f = fundamentales(tuple(tabla.index))
-    val = tabla[["Precio USD"]].join(f)
-    val["Posición rango 52 sem. %"] = (
-        (close.iloc[-1] - close.min()) / (close.max() - close.min()) * 100
-    )
-    val["Dist. a media 200r %"] = (close.iloc[-1] / close.tail(200).mean() - 1) * 100
+    divs = dividendos_12m(tuple(tabla.index))
+    val = tabla[["Nombre", "Sector", "Precio USD", "Volumen USD (M)"]].copy()
+    val["Div. 12m USD"] = pd.Series(divs)
+    val["Yield 12m %"] = val["Div. 12m USD"] / val["Precio USD"] * 100
+    val = val.join(f[["P/E", "P/E futuro"]])
+    val["Posición rango 52 sem. %"] = (close.iloc[-1] - close.min()) / (close.max() - close.min()) * 100
 
+    # Mediana de P/E por sector, calculada sobre toda la lista (antes de filtrar)
     pe_ok = val["P/E"].where(val["P/E"] > 0)
     med = pe_ok.groupby(val["Sector"]).transform("median")
     n_sec = pe_ok.groupby(val["Sector"]).transform("count")
@@ -252,11 +317,28 @@ with tab2:
         return "⚪ En línea"
 
     val["Veredicto"] = val.apply(veredicto, axis=1)
-    st.dataframe(val.round(2), width="stretch")
-    st.info(
-        "Esto es una comparación **relativa**: el P/E de cada acción contra la mediana de su sector "
-        "dentro de esta lista (barata <0,8× · cara >1,2×). No es un valor intrínseco. "
-        "Una acción puede ser 'barata' porque el mercado espera que sus ganancias caigan."
+
+    solo_pagan = st.checkbox("Solo las que pagan dividendos", value=True)
+
+    v = val[val["Volumen USD (M)"] >= MIN_VOLUMEN_USD_M]
+    if solo_pagan:
+        v = v[v["Yield 12m %"] > 0]
+
+    cols_v = ["Nombre", "Precio USD", "Div. 12m USD", "Yield 12m %",
+              "P/E", "P/E vs sector", "Posición rango 52 sem. %", "Veredicto"]
+    st.caption(f"{len(v)} de {len(val)} CEDEARs pasan los filtros, agrupados por sector.")
+    for sector in sorted(v["Sector"].unique()):
+        sub = v[v["Sector"] == sector].sort_values("Yield 12m %", ascending=False)[cols_v]
+        with st.expander(f"{sector} ({len(sub)})", expanded=True):
+            st.dataframe(
+                sub.style.map(color_yield, subset=["Yield 12m %"]).format(precision=2, na_rep="-"),
+                width="stretch",
+            )
+    st.markdown(
+        "**Yield:** gris no paga · rojo <1,5% · amarillo 1,5–3% · verde 3–6% · naranja ≥6% (revisar por qué es tan alto). "
+        "Es bruto, sobre la acción en NY; el CEDEAR cobra en pesos y con retención en origen.  \n"
+        "**¿Cara o barata?** Compara el P/E contra la mediana de su sector en esta lista (barata <0,8× · cara >1,2×). "
+        "Es una comparación **relativa**, no un valor intrínseco: una acción puede ser barata porque se esperan ganancias menores."
     )
 
 # --- 3. FCI -----------------------------------------------------------------
