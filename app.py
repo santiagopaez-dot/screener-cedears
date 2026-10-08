@@ -47,17 +47,6 @@ def rsi(s, n=14):
     return 100 - 100 / (1 + up / dn)
 
 
-def etiqueta_rsi(v, lo=30, hi=70):
-    """Texto único: valor + señal, por ejemplo '28.4  🟢 Sobreventa'."""
-    if pd.isna(v):
-        return "-"
-    if v < lo:
-        return f"{v:.1f}  🟢 Sobreventa"
-    if v > hi:
-        return f"{v:.1f}  🔴 Sobrecompra"
-    return f"{v:.1f}  ⚪ Neutral"
-
-
 def tea(tna, m):
     """TEA a partir de una TNA (decimal) con m capitalizaciones por año."""
     return (1 + tna / m) ** m - 1
@@ -276,7 +265,7 @@ with tab1:
             st.dataframe(
                 sub.style
                 .map(lambda v: color_rsi(v, lo, hi), subset=cols_rsi)
-                .format(lambda v: etiqueta_rsi(v, lo, hi), subset=cols_rsi)
+                .format(precision=1, na_rep="-", subset=cols_rsi)
                 .format(precision=2, na_rep="-", subset=["Precio USD", "Volatilidad %"]),
                 width="stretch",
             )
