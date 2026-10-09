@@ -3,9 +3,11 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import re
+import json
 import unicodedata
 import requests
-from datetime import timedelta
+from pathlib import Path
+from datetime import date, timedelta
 
 st.set_page_config(page_title="Panel de inversiones AR", layout="wide")
 st.title("📊 Panel de inversiones: CEDEARs, FCI y renta fija")
@@ -310,6 +312,83 @@ def riesgo_pais():
 
 
 # ----------------------------------------------------------------------------
+# Renta fija: cronogramas (archivo del repo) y precios en vivo (data912)
+# ----------------------------------------------------------------------------
+@st.cache_data(ttl=3600)
+def cargar_cronogramas():
+    return json.loads((Path(__file__).parent / "cronogramas.json").read_text(encoding="utf-8"))
+
+
+@st.cache_data(ttl=600, show_spinner="Descargando precios de letras, bonos y ONs...")
+def precios_renta_fija():
+    """Precio por símbolo desde data912 (no es tiempo real). Usa punto medio si el spread es chico, si no el último."""
+    out, paneles_ok = {}, []
+    for panel in ("arg_notes", "arg_bonds", "arg_corp"):
+        try:
+            r = requests.get(f"https://data912.com/live/{panel}", timeout=25)
+            r.raise_for_status()
+            for x in r.json():
+                bid, ask, ult = x.get("px_bid") or 0, x.get("px_ask") or 0, x.get("c") or 0
+                if bid > 0 and ask > 0 and ask / bid - 1 < 0.05:
+                    px = (bid + ask) / 2
+                else:
+                    px = ult
+                if px and px > 0:
+                    out[x["symbol"]] = float(px)
+            paneles_ok.append(panel)
+        except Exception:
+            pass
+    return out, paneles_ok
+
+
+def liquidacion():
+    """Liquidación T+1: próximo día hábil (no contempla feriados)."""
+    d = date.today() + timedelta(days=1)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
+
+
+def metricas_flujos(precio, flujos, liq):
+    fl = [(date.fromisoformat(f), m) for f, m in flujos if date.fromisoformat(f) > liq]
+    if not fl:
+        return None
+    t = np.array([(f - liq).days / 365 for f, _ in fl])
+    cf = np.array([m for _, m in fl])
+    tir = ytm(precio, t, cf)
+    if np.isnan(tir) or tir > 1.0:
+        return None
+    pv = cf / (1 + tir) ** t
+    return {"TIR (TEA) %": tir * 100,
+            "TIR nominal (cap. semestral) %": 2 * ((1 + tir) ** 0.5 - 1) * 100,
+            "Duración (años)": float((t * pv).sum() / pv.sum()),
+            "Próximo pago": str(fl[0][0]), "Vencimiento": str(fl[-1][0]),
+            "Días al vto.": (fl[-1][0] - liq).days}
+
+
+def tabla_bonos(filas, flujos_por_id, key, liq, aviso_vacio):
+    if not filas:
+        st.warning(aviso_vacio)
+        return
+    df = pd.DataFrame(filas).sort_values("Vencimiento").reset_index(drop=True)
+    st.info("**Para ver las fechas de pago de un instrumento:** marcá la casilla a la izquierda de su nombre. "
+            "Abajo aparece cuánto paga y cuándo, por cada 100 de valor nominal.")
+    ev = st.dataframe(df.style.format(precision=2, na_rep="-"), width="stretch",
+                      on_select="rerun", selection_mode="single-row", key=key)
+    sel = ev.selection.rows if ev is not None else []
+    if sel:
+        ident = df.loc[sel[0], "Instrumento"]
+        fl = [(f, m) for f, m in flujos_por_id[ident] if date.fromisoformat(f) > liq]
+        st.markdown(f"**Fechas de pago de {ident}**")
+        st.dataframe(pd.DataFrame({
+            "Fecha de pago": [f for f, _ in fl],
+            "Pago por 100 VN": [m for _, m in fl],
+            "Días desde la liquidación": [(date.fromisoformat(f) - liq).days for f, _ in fl],
+        }), hide_index=True, width="stretch")
+        st.caption("Para bonos que amortizan, cada pago mezcla cupón y devolución de capital.")
+
+
+# ----------------------------------------------------------------------------
 # Pestañas
 # ----------------------------------------------------------------------------
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -536,52 +615,114 @@ with tab5:
     try:
         rp = riesgo_pais()
         st.metric("Riesgo país (puntos básicos)", rp.get("valor"), help=f"Dato al {rp.get('fecha')}")
+        st.caption("El riesgo país es la sobretasa que pagan los bonos argentinos en dólares sobre los bonos del Tesoro de EE.UU. "
+                   "(100 puntos básicos = 1%). Es solo un indicador de contexto: **no entra en los cálculos de abajo**.")
     except Exception:
         st.caption("Riesgo país no disponible en este momento.")
+    st.caption("Precios en vivo de data912 (no es tiempo real). La TIR es lo que rinde el instrumento **si lo mantenés hasta el "
+               "vencimiento y el emisor paga todo**; no es una predicción.")
+    liq = liquidacion()
+    sub_l, sub_s, sub_o, sub_m = st.tabs(["Letras (pesos)", "Bonos soberanos (USD)", "ONs (USD)", "Calculadora manual"])
+    try:
+        crono = cargar_cronogramas()
+        px, paneles = precios_renta_fija()
+        hay_datos = True
+    except Exception as e:
+        hay_datos = False
+        st.warning(f"No se pudieron cargar los datos de instrumentos: {e}")
 
-    modo = st.radio("Instrumento", ["Letra / cupón cero (Lecap, etc.)", "Bono u ON con cupones"], horizontal=True)
+    if hay_datos:
+        if not paneles:
+            st.warning("No se pudo conectar con la fuente de precios (data912) en este momento.")
+        st.caption(f"Cronogramas de pago actualizados al **{crono['actualizado']}** (archivo cronogramas.json del repositorio). "
+                   f"Liquidación estimada: {liq:%d/%m/%Y} (T+1, sin contar feriados).")
 
-    if modo.startswith("Letra"):
-        c1, c2, c3 = st.columns(3)
-        precio = c1.number_input("Precio de compra (por 100 VN)", min_value=0.01, value=105.0, step=0.5)
-        pago = c2.number_input("Pago al vencimiento (por 100 VN)", min_value=0.01, value=110.0, step=0.5)
-        d = c3.number_input("Días al vencimiento", min_value=1, value=90, step=1)
-        rend = pago / precio - 1
-        teaz = (pago / precio) ** (365 / d) - 1
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Rendimiento al vto.", f"{rend * 100:.2f}%")
-        m2.metric("TNA (simple)", f"{rend * 365 / d * 100:.2f}%")
-        m3.metric("TEA", f"{teaz * 100:.2f}%")
-        m4.metric("TEM", f"{((1 + teaz) ** (30 / 365) - 1) * 100:.2f}%")
-        st.caption("Cargá el pago al vencimiento (capital + intereses) que figura en la ficha de la letra.")
-    else:
-        c1, c2, c3, c4 = st.columns(4)
-        precio = c1.number_input("Precio con intereses corridos (por 100 VN)", min_value=0.01, value=95.0, step=0.5)
-        cupon = c2.number_input("Cupón anual % (TNA)", min_value=0.0, value=8.0, step=0.25)
-        f_pag = c3.selectbox("Pagos por año", [1, 2, 4, 12], index=1)
-        anios = c4.number_input("Años al vencimiento", min_value=0.1, value=3.0, step=0.25)
+        with sub_l:
+            filas = []
+            for l in crono["letras"]:
+                p = px.get(l["ticker"])
+                dias = (date.fromisoformat(l["vencimiento"]) - liq).days
+                if not p or dias <= 0:
+                    continue
+                rend = l["pago_final"] / p - 1
+                filas.append({"Instrumento": l["ticker"], "Vencimiento": l["vencimiento"], "Días": dias, "Precio": p,
+                              "Pago final": l["pago_final"], "Rend. al vto. %": rend * 100,
+                              "TNA %": rend * 365 / dias * 100, "TEA %": ((1 + rend) ** (365 / dias) - 1) * 100,
+                              "TEM %": ((1 + rend) ** (30 / dias) - 1) * 100})
+            tabla_bonos(filas, {f["Instrumento"]: [(f["Vencimiento"], f["Pago final"])] for f in filas},
+                        "rf_letras", liq, "No hay precios disponibles para las letras cargadas.")
+            st.caption(f"{len(filas)} de {len(crono['letras'])} letras con precio. Si falta una letra reciente, hay que agregarla "
+                       "a cronogramas.json (ticker, vencimiento y pago final por 100).")
 
-        n = int(np.ceil(anios * f_pag - 1e-9))
-        tiempos = [anios - (n - i) / f_pag for i in range(1, n + 1)]
-        flujos = [cupon / f_pag] * n
-        flujos[-1] += 100.0
+        with sub_s:
+            filas, flujos = [], {}
+            for k, v in crono["soberanos"].items():
+                p = px.get(k + "D")
+                m = metricas_flujos(p, v["flujos"], liq) if p else None
+                if m:
+                    filas.append({"Instrumento": k, "Ley": v["ley"], "Precio USD": p, **m})
+                    flujos[k] = v["flujos"]
+            tabla_bonos(filas, flujos, "rf_sob", liq, "No hay precios disponibles para los bonos soberanos.")
+            st.caption("Precio en dólares MEP (símbolo terminado en D), por 100 de valor nominal original. "
+                       "La TIR usa el precio de pantalla sin ajustar intereses corridos.")
 
-        tir = ytm(precio, tiempos, flujos)
-        if np.isnan(tir):
-            st.warning("No se pudo calcular la TIR con esos datos.")
+        with sub_o:
+            filas, flujos = [], {}
+            for k, v in crono["ons"].items():
+                p = px.get(v["precio_ticker"])
+                m = metricas_flujos(p, v["flujos"], liq) if p else None
+                if m:
+                    filas.append({"Instrumento": k, "Emisor": v["nombre"], "Precio USD": p, **m})
+                    flujos[k] = v["flujos"]
+            tabla_bonos(filas, flujos, "rf_ons", liq, "No hay precios disponibles para las ONs cargadas.")
+            st.caption("Las ONs con poca operación pueden tener precios poco representativos: mirá el spread y el volumen "
+                       "en tu broker antes de usar la TIR. La TIR usa el precio de pantalla sin ajustar intereses corridos.")
+
+    with sub_m:
+
+        modo = st.radio("Instrumento", ["Letra / cupón cero (Lecap, etc.)", "Bono u ON con cupones"], horizontal=True)
+
+        if modo.startswith("Letra"):
+            c1, c2, c3 = st.columns(3)
+            precio = c1.number_input("Precio de compra (por 100 VN)", min_value=0.01, value=105.0, step=0.5)
+            pago = c2.number_input("Pago al vencimiento (por 100 VN)", min_value=0.01, value=110.0, step=0.5)
+            d = c3.number_input("Días al vencimiento", min_value=1, value=90, step=1)
+            rend = pago / precio - 1
+            teaz = (pago / precio) ** (365 / d) - 1
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Rendimiento al vto.", f"{rend * 100:.2f}%")
+            m2.metric("TNA (simple)", f"{rend * 365 / d * 100:.2f}%")
+            m3.metric("TEA", f"{teaz * 100:.2f}%")
+            m4.metric("TEM", f"{((1 + teaz) ** (30 / 365) - 1) * 100:.2f}%")
+            st.caption("Cargá el pago al vencimiento (capital + intereses) que figura en la ficha de la letra.")
         else:
-            pv = np.array(flujos) / (1 + tir) ** np.array(tiempos)
-            dur = float((np.array(tiempos) * pv).sum() / pv.sum())
-            m1, m2, m3 = st.columns(3)
-            m1.metric("TIR (TEA)", f"{tir * 100:.2f}%")
-            m2.metric("Rendimiento corriente", f"{cupon / precio * 100:.2f}%")
-            m3.metric("Duración (años)", f"{dur:.2f}")
-        with st.expander("Ver flujos de fondos"):
-            st.dataframe(pd.DataFrame({"Años desde hoy": np.round(tiempos, 2), "Flujo por 100 VN": flujos}),
-                         hide_index=True)
-        st.caption("Modelo simple: amortización al final (bullet) y precio sucio. "
-                   "Los bonos que amortizan por partes necesitan el cronograma real de pagos.")
-    st.warning("La TIR en dólares (bonos y ONs hard dollar) no se compara directo con tasas en pesos.")
+            c1, c2, c3, c4 = st.columns(4)
+            precio = c1.number_input("Precio con intereses corridos (por 100 VN)", min_value=0.01, value=95.0, step=0.5)
+            cupon = c2.number_input("Cupón anual % (TNA)", min_value=0.0, value=8.0, step=0.25)
+            f_pag = c3.selectbox("Pagos por año", [1, 2, 4, 12], index=1)
+            anios = c4.number_input("Años al vencimiento", min_value=0.1, value=3.0, step=0.25)
+
+            n = int(np.ceil(anios * f_pag - 1e-9))
+            tiempos = [anios - (n - i) / f_pag for i in range(1, n + 1)]
+            flujos = [cupon / f_pag] * n
+            flujos[-1] += 100.0
+
+            tir = ytm(precio, tiempos, flujos)
+            if np.isnan(tir):
+                st.warning("No se pudo calcular la TIR con esos datos.")
+            else:
+                pv = np.array(flujos) / (1 + tir) ** np.array(tiempos)
+                dur = float((np.array(tiempos) * pv).sum() / pv.sum())
+                m1, m2, m3 = st.columns(3)
+                m1.metric("TIR (TEA)", f"{tir * 100:.2f}%")
+                m2.metric("Rendimiento corriente", f"{cupon / precio * 100:.2f}%")
+                m3.metric("Duración (años)", f"{dur:.2f}")
+            with st.expander("Ver flujos de fondos"):
+                st.dataframe(pd.DataFrame({"Años desde hoy": np.round(tiempos, 2), "Flujo por 100 VN": flujos}),
+                             hide_index=True)
+            st.caption("Modelo simple: amortización al final (bullet) y precio sucio. "
+                       "Los bonos que amortizan por partes necesitan el cronograma real de pagos.")
+        st.warning("La TIR en dólares (bonos y ONs hard dollar) no se compara directo con tasas en pesos.")
 
 st.divider()
 st.caption("Proyecto personal con fines informativos. No constituye asesoramiento financiero ni recomendación de inversión.")
