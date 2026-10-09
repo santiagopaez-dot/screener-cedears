@@ -456,7 +456,7 @@ with tab3:
             )
             filas_sel = ev.selection.rows if ev is not None else []
             if not filas_sel:
-                st.caption("Tocá una fila para ver en qué invierte el fondo, su plazo de rescate, la inversión mínima y los honorarios.")
+                st.caption("Marcá la casilla a la izquierda de un fondo para ver en qué invierte, su plazo de rescate, la inversión mínima y los honorarios.")
             else:
                 nombre_sel = mostrar.loc[filas_sel[0], "Fondo"]
                 try:
