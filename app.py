@@ -349,7 +349,7 @@ def liquidacion():
     return d
 
 
-def metricas_flujos(precio, flujos, liq):
+def metricas_flujos(precio, flujos, liq, reinv=0.04, n_cap=2, nom_cap="semestral"):
     fl = [(date.fromisoformat(f), m) for f, m in flujos if date.fromisoformat(f) > liq]
     if not fl:
         return None
@@ -359,11 +359,20 @@ def metricas_flujos(precio, flujos, liq):
     if np.isnan(tir) or tir > 1.0:
         return None
     pv = cf / (1 + tir) ** t
+    # TIR modificada: los cobros intermedios se reinvierten a una tasa explícita (reinv) hasta el vencimiento
+    T = t[-1]
+    vf = float(np.sum(cf * (1 + reinv) ** (T - t)))
+    tirm = (vf / precio) ** (1 / T) - 1
+    # Días para recuperar: fecha del primer pago en que lo cobrado acumulado alcanza el precio pagado
+    acum = np.cumsum(cf)
+    idx = np.argmax(acum >= precio) if (acum >= precio).any() else None
     return {"TIR (TEA) %": tir * 100,
-            "TIR nominal (cap. semestral) %": 2 * ((1 + tir) ** 0.5 - 1) * 100,
+            f"TNA (cap. {nom_cap}) %": n_cap * ((1 + tir) ** (1 / n_cap) - 1) * 100,
+            "TIR modificada %": tirm * 100,
             "Duración (años)": float((t * pv).sum() / pv.sum()),
-            "Próximo pago": str(fl[0][0]), "Vencimiento": str(fl[-1][0]),
-            "Días al vto.": (fl[-1][0] - liq).days}
+            "Días para recuperar": (fl[idx][0] - liq).days if idx is not None else np.nan,
+            "Días al vto.": (fl[-1][0] - liq).days,
+            "Próximo pago": str(fl[0][0]), "Vencimiento": str(fl[-1][0])}
 
 
 def tabla_bonos(filas, flujos_por_id, key, liq, aviso_vacio):
@@ -622,6 +631,27 @@ with tab5:
     st.caption("Precios en vivo de data912 (no es tiempo real). La TIR es lo que rinde el instrumento **si lo mantenés hasta el "
                "vencimiento y el emisor paga todo**; no es una predicción.")
     liq = liquidacion()
+    c1, c2 = st.columns(2)
+    CAPS = {"Mensual": 12, "Trimestral": 4, "Semestral": 2, "Anual": 1, "Diaria": 365}
+    nom_cap = c1.selectbox("TNA de bonos y ONs con capitalización", list(CAPS), index=2,
+                           help="La TNA es la misma tasa expresada con otra frecuencia de capitalización. Semestral es la convención de los bonos.")
+    n_cap = CAPS[nom_cap]
+    reinv = c2.number_input("Tasa de reinversión de los cobros intermedios (TEA %)", min_value=0.0, max_value=50.0,
+                            value=4.0, step=0.5,
+                            help="Se usa para la TIR modificada. Es un supuesto tuyo: ¿a qué tasa podrías reinvertir cupones y amortizaciones en dólares?") / 100
+    with st.expander("¿Cómo leer las columnas?"):
+        st.markdown(
+            "- **TIR (TEA):** tasa efectiva anual que iguala el precio con todos los pagos descontados en su fecha. "
+            "**Supone que lo que cobrás en el medio (cupones y amortizaciones) se reinvierte a esa misma tasa.**  \n"
+            "- **TNA (cap. X):** *la misma* TIR expresada como tasa nominal anual con capitalización X. No es otro rendimiento, "
+            "es otra forma de expresarlo: con TEA 10%, la TNA semestral es 9,76%.  \n"
+            "- **TIR modificada:** corrige ese supuesto. Reinvierte los cobros intermedios a la tasa que elegís arriba. "
+            "En bonos que amortizan, o con TIR muy alta, es más realista que la TIR.  \n"
+            "- **Duración (años):** plazo promedio ponderado en que cobrás el dinero. En bonos que amortizan es menor que el plazo al vencimiento.  \n"
+            "- **Días para recuperar:** días hasta el primer pago en que lo cobrado acumulado (sin descontar) iguala lo que pagaste. "
+            "Vacío si nunca lo recuperás con los pagos que quedan.  \n"
+            "- **Días al vto.:** días desde la liquidación hasta el **último** pago del instrumento.  \n"
+            "- En **letras** hay un solo pago, así que días para recuperar y días al vencimiento son lo mismo.")
     sub_l, sub_s, sub_o, sub_m = st.tabs(["Letras (pesos)", "Bonos soberanos (USD)", "ONs (USD)", "Calculadora manual"])
     try:
         crono = cargar_cronogramas()
@@ -658,7 +688,7 @@ with tab5:
             filas, flujos = [], {}
             for k, v in crono["soberanos"].items():
                 p = px.get(k + "D")
-                m = metricas_flujos(p, v["flujos"], liq) if p else None
+                m = metricas_flujos(p, v["flujos"], liq, reinv, n_cap, nom_cap.lower()) if p else None
                 if m:
                     filas.append({"Instrumento": k, "Ley": v["ley"], "Precio USD": p, **m})
                     flujos[k] = v["flujos"]
@@ -670,7 +700,7 @@ with tab5:
             filas, flujos = [], {}
             for k, v in crono["ons"].items():
                 p = px.get(v["precio_ticker"])
-                m = metricas_flujos(p, v["flujos"], liq) if p else None
+                m = metricas_flujos(p, v["flujos"], liq, reinv, n_cap, nom_cap.lower()) if p else None
                 if m:
                     filas.append({"Instrumento": k, "Emisor": v["nombre"], "Precio USD": p, **m})
                     flujos[k] = v["flujos"]
