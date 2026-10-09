@@ -275,11 +275,27 @@ def mostrar_detalle(f):
             column_config={"Porcentaje": st.column_config.ProgressColumn(
                 "Porcentaje", min_value=0, max_value=100, format="%.1f%%")},
         )
+    COMISIONES = {
+        "honorarioGerente": ("Honorario de la administradora", "% anual sobre el patrimonio del fondo; se descuenta día a día del valor de la cuotaparte"),
+        "honorarioDepositaria": ("Honorario de la depositaria (custodia)", "% anual sobre el patrimonio; se descuenta del valor de la cuotaparte"),
+        "gastosOrdinariosGestion": ("Gastos ordinarios de gestión", "% anual sobre el patrimonio; se descuenta del valor de la cuotaparte"),
+        "comisionIngreso": ("Comisión de ingreso", "% del monto que suscribís, se cobra al entrar"),
+        "comisionEgreso": ("Comisión de rescate (egreso)", "% del monto que rescatás, se cobra al salir"),
+        "comisionTransferencia": ("Comisión de transferencia", "Se cobra al transferir cuotapartes a otro agente"),
+        "comisionExito": ("Comisión de éxito", "% sobre el rendimiento que supera un objetivo, si el reglamento lo prevé"),
+        "otros": ("Otros", "Ver el reglamento de gestión del fondo"),
+    }
     hon = {k: v for k, v in (f.get("honorarios") or {}).items() if v}
     if hon:
-        with st.expander("Honorarios y comisiones (tal como los informa la CNV)"):
-            st.dataframe(pd.DataFrame({"Concepto": list(hon), "Valor": list(hon.values())}),
-                         hide_index=True, width="stretch")
+        with st.expander("Honorarios y comisiones: cómo se cobran"):
+            filas = [{"Concepto": COMISIONES.get(k, (k, ""))[0], "Valor": f"{v:g}%",
+                      "Cómo se cobra": COMISIONES.get(k, (k, ""))[1]} for k, v in hon.items()]
+            st.dataframe(pd.DataFrame(filas), hide_index=True, width="stretch")
+            st.caption("Los honorarios anuales **ya están descontados** del rendimiento que muestra la tabla: "
+                       "no se cobran aparte ni hay que restarlos de nuevo. Se pagan siempre, haya ganancia o pérdida. "
+                       "Las comisiones de ingreso y rescate, en cambio, se pagan una vez, al entrar o salir. "
+                       "Valores tal como los informa la CNV; suelen ser topes del reglamento y lo realmente cobrado "
+                       "puede ser menor. Confirmalo en el reglamento de gestión.")
     cal = f.get("calificaciones") or []
     if cal:
         st.caption("Calificaciones: " + " · ".join(
@@ -449,15 +465,15 @@ with tab3:
             mostrar = (r[cols].head(30)
                        .rename(columns={"fondo": "Fondo", "horizonte": "Horizonte", "fecha": "Dato al"})
                        .reset_index(drop=True))
+            st.info("**Para ver en qué invierte un fondo:** marcá la casilla que está a la izquierda de su nombre. "
+                    "Abajo de la tabla aparece su cartera, el plazo de rescate, la inversión mínima y las comisiones.")
             ev = st.dataframe(
                 mostrar.style.format(precision=2, na_rep="-"),
                 width="stretch", on_select="rerun", selection_mode="single-row",
                 key=f"fci_{tipo_n}_{dias}_{min_pat}",
             )
             filas_sel = ev.selection.rows if ev is not None else []
-            if not filas_sel:
-                st.caption("Marcá la casilla a la izquierda de un fondo para ver en qué invierte, su plazo de rescate, la inversión mínima y los honorarios.")
-            else:
+            if filas_sel:
                 nombre_sel = mostrar.loc[filas_sel[0], "Fondo"]
                 try:
                     f_det = buscar_fondo(detalle_fondos(), nombre_sel)
