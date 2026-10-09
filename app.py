@@ -2,6 +2,8 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import re
+import unicodedata
 import requests
 from datetime import timedelta
 
@@ -203,15 +205,15 @@ def ranking_fci(tipo, dias):
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
-def tasa_deposito_30d():
-    """Tasa de depósitos a 30 días (promedio de bancos, BCRA). Devuelve (TNA %, fecha)."""
+def serie_deposito_30d():
+    """Serie de tasas de depósitos a 30 días (promedio de bancos, BCRA): DataFrame con fecha y TNA %."""
     r = requests.get(f"{API}/tasas/depositos30Dias", timeout=20)
     r.raise_for_status()
     df = pd.DataFrame(r.json()).dropna()
     df["fecha"] = pd.to_datetime(df["fecha"])
-    ult = df.sort_values("fecha").iloc[-1]
-    v = float(ult["valor"])
-    return (v if v > 1 else v * 100), ult["fecha"].date()   # puede venir en % o como fracción
+    df["valor"] = df["valor"].astype(float)
+    df["tna"] = np.where(df["valor"] > 1, df["valor"], df["valor"] * 100)   # puede venir en % o fracción
+    return df.sort_values("fecha")[["fecha", "tna"]].reset_index(drop=True)
 
 
 def tea_de_tna30(tna_pct):
@@ -222,6 +224,66 @@ def tea_de_tna30(tna_pct):
 def tna30_de_tea(tea_pct):
     """TNA % de un plazo fijo a 30 días que rendiría lo mismo que esa TEA %."""
     return ((1 + tea_pct / 100) ** (30 / 365) - 1) * 365 / 30 * 100
+
+
+def norm_nombre(x):
+    """Clave para emparejar nombres de fondos: sin tildes, minúsculas, solo letras y números."""
+    x = unicodedata.normalize("NFKD", str(x)).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "", x.lower())
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner="Cargando detalle de los fondos...")
+def detalle_fondos():
+    """Todos los fondos con cartera, rescate, mínimo y honorarios (CNV vía ArgentinaDatos)."""
+    r = requests.get(f"{API}/fci/fondos", timeout=60)
+    r.raise_for_status()
+    js = r.json()
+    lista = js.get("fondos", []) if isinstance(js, dict) else js
+    return {norm_nombre(f.get("nombre", "")): f for f in lista}
+
+
+def buscar_fondo(dic, nombre):
+    k = norm_nombre(nombre)
+    if k in dic:
+        return dic[k]
+    cand = [v for kk, v in dic.items() if k and kk and (k in kk or kk in k)]
+    return cand[0] if len(cand) == 1 else None
+
+
+def mostrar_detalle(f):
+    st.markdown(f"#### {f.get('nombre', 'Fondo')}")
+    st.caption(" · ".join(str(x) for x in [f.get("administradora"), f.get("tipoRenta"),
+                                           f.get("moneda"), f.get("region")] if x))
+    plazo, minimo = f.get("plazoLiquidacionDias"), f.get("inversionMinima")
+    c = st.columns(4)
+    c[0].metric("Rescate", "-" if plazo is None else ("Mismo día" if plazo == 0 else f"{plazo} día(s)"))
+    c[1].metric("Inversión mínima", "-" if minimo is None else f"{minimo:,.0f} {f.get('monedaInversion') or ''}".strip())
+    c[2].metric("Horizonte", f.get("horizonte") or "-")
+    c[3].metric("Duración", f.get("duracion") or "-")
+
+    comp = pd.DataFrame(f.get("composicionCartera") or [])
+    if comp.empty or "porcentaje" not in comp:
+        st.info("El fondo no informa la composición de su cartera.")
+    else:
+        comp = comp.sort_values("porcentaje", ascending=False).reset_index(drop=True)
+        if comp["porcentaje"].sum() <= 1.5:          # viene como fracción
+            comp["porcentaje"] = comp["porcentaje"] * 100
+        st.markdown("**En qué invierte** (según lo informado a la CNV)")
+        st.dataframe(
+            comp.rename(columns={"nombre": "Activo", "porcentaje": "Porcentaje"}),
+            width="stretch", hide_index=True,
+            column_config={"Porcentaje": st.column_config.ProgressColumn(
+                "Porcentaje", min_value=0, max_value=100, format="%.1f%%")},
+        )
+    hon = {k: v for k, v in (f.get("honorarios") or {}).items() if v}
+    if hon:
+        with st.expander("Honorarios y comisiones (tal como los informa la CNV)"):
+            st.dataframe(pd.DataFrame({"Concepto": list(hon), "Valor": list(hon.values())}),
+                         hide_index=True, width="stretch")
+    cal = f.get("calificaciones") or []
+    if cal:
+        st.caption("Calificaciones: " + " · ".join(
+            f"{x.get('calificadora', '')}: {x.get('calificacion', '')}" for x in cal))
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -369,21 +431,42 @@ with tab3:
             r["Equiv. TNA plazo fijo 30d %"] = tna30_de_tea(r["TEA %"])
             cols = ["fondo", "horizonte", "Rend. período %", "TEA %", "Equiv. TNA plazo fijo 30d %"]
             try:
-                tna_ref, f_ref = tasa_deposito_30d()
+                serie = serie_deposito_30d()
+                f_fin = pd.to_datetime(r["fecha"]).max()
+                ventana = serie[(serie["fecha"] > f_fin - timedelta(days=dias)) & (serie["fecha"] <= f_fin)]
+                if ventana.empty:
+                    ventana = serie.tail(1)
+                tna_ref = float(ventana["tna"].mean())
                 tea_ref = tea_de_tna30(tna_ref)
                 r["TEA vs referencia (p.p.)"] = r["TEA %"] - tea_ref
                 cols.append("TEA vs referencia (p.p.)")
-                st.info(f"Referencia: depósitos a 30 días (promedio de bancos, BCRA, al {f_ref}): "
-                        f"TNA {tna_ref:.1f}% = TEA {tea_ref:.1f}%. Un fondo con 'TEA vs referencia' positiva "
-                        "rindió más que depositar a plazo fijo en el período.")
+                st.info(f"Referencia: depósitos a 30 días (promedio de bancos, BCRA), promedio de los últimos {dias} días "
+                        f"hasta el {f_fin.date()}: TNA {tna_ref:.1f}% = TEA {tea_ref:.1f}%. "
+                        "Un fondo con 'TEA vs referencia' positiva rindió más que depositar a plazo fijo en ese mismo período.")
             except Exception:
                 st.caption("Tasa de referencia no disponible en este momento.")
             cols += ["Patrimonio (M)", "fecha"]
-            st.dataframe(
-                r[cols].head(30).rename(columns={"fondo": "Fondo", "horizonte": "Horizonte", "fecha": "Dato al"})
-                .reset_index(drop=True).style.format(precision=2, na_rep="-"),
-                width="stretch",
+            mostrar = (r[cols].head(30)
+                       .rename(columns={"fondo": "Fondo", "horizonte": "Horizonte", "fecha": "Dato al"})
+                       .reset_index(drop=True))
+            ev = st.dataframe(
+                mostrar.style.format(precision=2, na_rep="-"),
+                width="stretch", on_select="rerun", selection_mode="single-row",
+                key=f"fci_{tipo_n}_{dias}_{min_pat}",
             )
+            filas_sel = ev.selection.rows if ev is not None else []
+            if not filas_sel:
+                st.caption("Tocá una fila para ver en qué invierte el fondo, su plazo de rescate, la inversión mínima y los honorarios.")
+            else:
+                nombre_sel = mostrar.loc[filas_sel[0], "Fondo"]
+                try:
+                    f_det = buscar_fondo(detalle_fondos(), nombre_sel)
+                    if f_det is None:
+                        st.info(f"No encontré el detalle de «{nombre_sel}» en la base de fondos.")
+                    else:
+                        mostrar_detalle(f_det)
+                except Exception as e:
+                    st.warning(f"No se pudo cargar el detalle del fondo: {e}")
     except Exception as e:
         st.error(f"No se pudo consultar la API de FCI ahora: {e}")
     st.caption("Fuente: CNV vía ArgentinaDatos. **Rend. período** es la variación real de la cuotaparte (ya incluye la "
