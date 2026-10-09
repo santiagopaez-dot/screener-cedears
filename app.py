@@ -152,13 +152,16 @@ def fundamentales(tickers):
     for t in tickers:
         try:
             i = yf.Ticker(t).info
+            roe, deuda, ebitda = i.get("returnOnEquity"), i.get("totalDebt"), i.get("ebitda")
             filas.append({"Ticker": t, "Sector": i.get("sector"),
                           "P/E": i.get("trailingPE"), "P/E futuro": i.get("forwardPE"),
-                          "P/B": i.get("priceToBook")})
+                          "P/B": i.get("priceToBook"),
+                          "ROE %": roe * 100 if roe is not None else None,
+                          "Deuda/EBITDA": deuda / ebitda if deuda and ebitda and ebitda > 0 else None})
         except Exception:
             filas.append({"Ticker": t})
     df = pd.DataFrame(filas).set_index("Ticker")
-    return df.reindex(columns=["Sector", "P/E", "P/E futuro", "P/B"])
+    return df.reindex(columns=["Sector", "P/E", "P/E futuro", "P/B", "ROE %", "Deuda/EBITDA"])
 
 
 API = "https://api.argentinadatos.com/v1/finanzas"
@@ -312,6 +315,85 @@ def riesgo_pais():
 
 
 # ----------------------------------------------------------------------------
+# Indicadores macro: tarjetas KPI, inflación y dólar MEP histórico
+# ----------------------------------------------------------------------------
+@st.cache_data(ttl=600, show_spinner=False)
+def kpis_macro():
+    out = {}
+    try:   # dólar MEP (casa "bolsa") y CCL: cotización actual de DolarApi
+        r = requests.get("https://dolarapi.com/v1/dolares", timeout=15)
+        r.raise_for_status()
+        for x in r.json():
+            try:
+                if x.get("casa") in ("bolsa", "contadoconliqui"):
+                    out[x["casa"]] = float(x.get("venta") or x.get("compra"))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    try:   # riesgo país con variación diaria
+        r = requests.get(f"{API}/indices/riesgo-pais", timeout=20)
+        r.raise_for_status()
+        d = pd.DataFrame(r.json()).dropna()
+        d["fecha"] = pd.to_datetime(d["fecha"])
+        d = d.sort_values("fecha")
+        out["rp"] = (float(d["valor"].iloc[-1]), float(d["valor"].iloc[-1] - d["valor"].iloc[-2]))
+    except Exception:
+        pass
+    try:   # S&P 500
+        h = yf.download("^GSPC", period="5d", auto_adjust=True, progress=False)["Close"].squeeze().dropna()
+        out["spx"] = (float(h.iloc[-1]), float((h.iloc[-1] / h.iloc[-2] - 1) * 100))
+    except Exception:
+        pass
+    return out
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def inflacion_serie():
+    r = requests.get(f"{API}/indices/inflacion", timeout=25)
+    r.raise_for_status()
+    d = pd.DataFrame(r.json()).dropna()
+    d["fecha"] = pd.to_datetime(d["fecha"])
+    return d.sort_values("fecha").reset_index(drop=True)
+
+
+def inflacion_periodo(serie, ini, fin):
+    """Inflación acumulada (%) entre dos fechas. Prorratea por días los meses parciales y, si el último mes
+    todavía no se publicó, extiende el último dato mensual. Devuelve (inflación %, ¿se extendió?)."""
+    s = serie.assign(mes=serie["fecha"].dt.to_period("M")).drop_duplicates("mes", keep="last").set_index("mes")["valor"]
+    s = s.sort_index()
+    acum, extendido = 1.0, False
+    for mes in pd.period_range(ini.to_period("M"), fin.to_period("M")):
+        ms = mes.start_time.normalize()
+        me = ms + pd.offsets.MonthBegin(1)
+        solape = (min(fin, me) - max(ini, ms)).days
+        if solape <= 0:
+            continue
+        if mes in s.index:
+            tasa = s[mes]
+        else:
+            tasa = s.iloc[-1] if mes > s.index[-1] else s.iloc[0]
+            extendido = extendido or mes > s.index[-1]
+        acum *= (1 + tasa / 100) ** (solape / (me - ms).days)
+    return (acum - 1) * 100, extendido
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def mep_hist():
+    r = requests.get("https://api.argentinadatos.com/v1/cotizaciones/dolares/bolsa", timeout=30)
+    r.raise_for_status()
+    d = pd.DataFrame(r.json())
+    col = "venta" if "venta" in d else "compra"
+    d["fecha"] = pd.to_datetime(d["fecha"])
+    return d.sort_values("fecha")[["fecha", col]].rename(columns={col: "mep"}).dropna().reset_index(drop=True)
+
+
+def mep_en(d, fecha):
+    sub = d[d["fecha"] <= fecha]
+    return float(sub["mep"].iloc[-1]) if len(sub) else np.nan
+
+
+# ----------------------------------------------------------------------------
 # Renta fija: cronogramas (archivo del repo) y precios en vivo (data912)
 # ----------------------------------------------------------------------------
 @st.cache_data(ttl=3600)
@@ -370,6 +452,7 @@ def metricas_flujos(precio, flujos, liq, reinv=0.04, n_cap=2, nom_cap="semestral
             f"TNA (cap. {nom_cap}) %": n_cap * ((1 + tir) ** (1 / n_cap) - 1) * 100,
             "TIR modificada %": tirm * 100,
             "Duración (años)": float((t * pv).sum() / pv.sum()),
+            "Duración modificada": float((t * pv).sum() / pv.sum()) / (1 + tir),
             "Días para recuperar": (fl[idx][0] - liq).days if idx is not None else np.nan,
             "Días al vto.": (fl[-1][0] - liq).days,
             "Próximo pago": str(fl[0][0]), "Vencimiento": str(fl[-1][0])}
@@ -400,6 +483,33 @@ def tabla_bonos(filas, flujos_por_id, key, liq, aviso_vacio):
 # ----------------------------------------------------------------------------
 # Pestañas
 # ----------------------------------------------------------------------------
+k = kpis_macro()
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("Dólar MEP", f"$ {k['bolsa']:,.0f}" if "bolsa" in k else "-")
+k2.metric("Dólar CCL", f"$ {k['contadoconliqui']:,.0f}" if "contadoconliqui" in k else "-")
+if "rp" in k:
+    k3.metric("Riesgo país", f"{k['rp'][0]:,.0f} pb", f"{k['rp'][1]:+.0f} pb", delta_color="inverse",
+              help="Variación respecto de la rueda anterior. Si sube, el mercado ve más riesgo (en rojo).")
+else:
+    k3.metric("Riesgo país", "-")
+if "spx" in k:
+    k4.metric("S&P 500", f"{k['spx'][0]:,.0f}", f"{k['spx'][1]:+.2f}%")
+else:
+    k4.metric("S&P 500", "-")
+
+OBJ = ["Ver todo", "Guardar plata a corto plazo", "Ganarle a la inflación"]
+objetivo = st.radio("¿Qué querés ver?", OBJ, horizontal=True,
+                    help="Filtra y ordena el Ranking FCI y la pestaña de Renta fija. No cambia las pestañas de CEDEARs.")
+modo_corto, modo_infl = objetivo == OBJ[1], objetivo == OBJ[2]
+if modo_corto:
+    st.info("**Corto plazo:** muestra fondos de mercado de dinero (30 días) y letras que vencen pronto. Las cauciones todavía no están "
+            "cargadas. Es un filtro informativo, no una recomendación: un fondo de mercado de dinero no garantiza rendimiento y una letra "
+            "solo devuelve lo prometido si la mantenés hasta el vencimiento.")
+elif modo_infl:
+    st.info("**Inflación:** muestra los fondos que rindieron por encima de la inflación en el período y compara las letras con la inflación "
+            "de los últimos 12 meses. Los bonos CER (indexados) todavía no están cargados. Es un filtro informativo: lo que pasó no garantiza "
+            "lo que va a pasar.")
+
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📈 CEDEARs: Trading (RSI)", "💰 CEDEARs: Dividendos y ¿cara o barata?", "🏦 Ranking FCI",
     "🧮 Simulador de tasas", "💵 Renta fija",
@@ -474,7 +584,7 @@ with tab2:
     val = tabla[["Nombre", "Sector", "Precio USD", "Volumen USD (M)"]].copy()
     val["Div. 12m USD"] = pd.Series(divs)
     val["Yield 12m %"] = val["Div. 12m USD"] / val["Precio USD"] * 100
-    val = val.join(f[["P/E", "P/E futuro"]])
+    val = val.join(f[["P/E", "P/E futuro", "ROE %", "Deuda/EBITDA"]])
     val["Posición rango 52 sem. %"] = (close.iloc[-1] - close.min()) / (close.max() - close.min()) * 100
 
     # Mediana de P/E por sector, calculada sobre toda la lista (antes de filtrar)
@@ -503,7 +613,7 @@ with tab2:
         v = v[v["Yield 12m %"] > 0]
 
     cols_v = ["Nombre", "Precio USD", "Div. 12m USD", "Yield 12m %",
-              "P/E", "P/E vs sector", "Posición rango 52 sem. %", "Veredicto"]
+              "P/E", "P/E vs sector", "ROE %", "Deuda/EBITDA", "Posición rango 52 sem. %", "Veredicto"]
     st.caption(f"{len(v)} de {len(val)} CEDEARs pasan los filtros, agrupados por sector.")
     for sector in sorted(v["Sector"].unique()):
         sub = v[v["Sector"] == sector].sort_values("Yield 12m %", ascending=False)[cols_v]
@@ -515,6 +625,10 @@ with tab2:
     st.markdown(
         "**Yield:** gris no paga · rojo <1,5% · amarillo 1,5–3% · verde 3–6% · naranja ≥6% (revisar por qué es tan alto). "
         "Es bruto, sobre la acción en NY; el CEDEAR cobra en pesos y con retención en origen.  \n"
+        "**ROE %:** ganancia sobre el patrimonio de los accionistas; más alto suele ser mejor, pero un patrimonio muy chico "
+        "(por recompras de acciones) lo infla.  \n"
+        "**Deuda/EBITDA:** cuántos años de ganancia operativa harían falta para pagar la deuda; arriba de 3 o 4 suele ser alto. "
+        "No es útil para bancos ni empresas financieras.  \n"
         "**¿Cara o barata?** Compara el P/E contra la mediana de su sector en esta lista (barata <0,8× · cara >1,2×). "
         "Es una comparación **relativa**, no un valor intrínseco: una acción puede ser barata porque se esperan ganancias menores."
     )
@@ -523,8 +637,9 @@ with tab2:
 with tab3:
     st.subheader("Ranking de Fondos Comunes de Inversión")
     c1, c2, c3 = st.columns(3)
-    tipo_n = c1.selectbox("Categoría", list(TIPOS_FCI))
-    dias = c2.selectbox("Período", [30, 90, 180, 365], index=1, format_func=lambda x: f"{x} días")
+    tipo_n = c1.selectbox("Categoría", ["Mercado de dinero"] if modo_corto else list(TIPOS_FCI))
+    dias = c2.selectbox("Período", [30, 90, 180, 365], index=0 if modo_corto else (3 if modo_infl else 1),
+                        format_func=lambda x: f"{x} días")
     min_pat = c3.number_input("Patrimonio mínimo (millones)", min_value=0, value=1000, step=500)
     try:
         r = ranking_fci(TIPOS_FCI[tipo_n], dias)
@@ -549,7 +664,31 @@ with tab3:
                         "Un fondo con 'TEA vs referencia' positiva rindió más que depositar a plazo fijo en ese mismo período.")
             except Exception:
                 st.caption("Tasa de referencia no disponible en este momento.")
+            try:
+                infl = inflacion_serie()
+                ini, fin = pd.to_datetime(r["fecha_ant"]), pd.to_datetime(r["fecha"])
+                mapa = {(a, b): inflacion_periodo(infl, a, b) for a, b in set(zip(ini, fin))}
+                r["Inflación período %"] = [mapa[(a, b)][0] for a, b in zip(ini, fin)]
+                r["Rend. real vs inflación %"] = ((1 + r["Rend. período %"] / 100) / (1 + r["Inflación período %"] / 100) - 1) * 100
+                cols += ["Inflación período %", "Rend. real vs inflación %"]
+                if any(v[1] for v in mapa.values()):
+                    st.caption("La inflación del último mes aún no está publicada: se estimó repitiendo el último dato mensual.")
+            except Exception:
+                st.caption("Inflación no disponible en este momento.")
+            try:
+                mep = mep_hist()
+                ini, fin = pd.to_datetime(r["fecha_ant"]), pd.to_datetime(r["fecha"])
+                var = {(a, b): mep_en(mep, b) / mep_en(mep, a) - 1 for a, b in set(zip(ini, fin))}
+                r["Rend. en USD (MEP) %"] = [((1 + x / 100) / (1 + var[(a, b)]) - 1) * 100
+                                             for x, a, b in zip(r["Rend. período %"], ini, fin)]
+                cols.append("Rend. en USD (MEP) %")
+            except Exception:
+                st.caption("Dólar MEP histórico no disponible en este momento.")
             cols += ["Patrimonio (M)", "fecha"]
+            if modo_infl and "Rend. real vs inflación %" in r:
+                r = r[r["Rend. real vs inflación %"] > 0].sort_values("Rend. real vs inflación %", ascending=False)
+                if r.empty:
+                    st.info("Ningún fondo de esta categoría le ganó a la inflación en el período elegido.")
             mostrar = (r[cols].head(30)
                        .rename(columns={"fondo": "Fondo", "horizonte": "Horizonte", "fecha": "Dato al"})
                        .reset_index(drop=True))
@@ -578,7 +717,8 @@ with tab3:
                "tasas; la TNA no lo es. En fondos de renta fija y variable, anualizar períodos cortos exagera: el valor "
                "sube y baja. 'Equiv. TNA plazo fijo' dice qué TNA a 30 días daría lo mismo que el fondo, para compararlo con "
                "lo que ofrece un banco. Rendimiento pasado no garantiza resultados futuros. Puede haber fondos en dólares mezclados: "
-               "no comparar directo con fondos en pesos.")
+               "no comparar directo con fondos en pesos. 'Rend. real vs inflación' y 'Rend. en USD (MEP)' miden si el fondo "
+               "le ganó a la inflación y al dólar en el mismo período: un valor positivo es ganancia real.")
 
 # --- 4. Simulador -----------------------------------------------------------
 with tab4:
@@ -647,6 +787,8 @@ with tab5:
             "es otra forma de expresarlo: con TEA 10%, la TNA semestral es 9,76%.  \n"
             "- **TIR modificada:** corrige ese supuesto. Reinvierte los cobros intermedios a la tasa que elegís arriba. "
             "En bonos que amortizan, o con TIR muy alta, es más realista que la TIR.  \n"
+            "- **Duración modificada:** cuánto cambia el precio, aproximadamente en %, si la TIR sube o baja 1 punto. "
+            "Con duración modificada 3, una suba de 1 punto en la TIR baja el precio cerca de 3%. Es la medida de sensibilidad a la tasa.  \n"
             "- **Duración (años):** plazo promedio ponderado en que cobrás el dinero. En bonos que amortizan es menor que el plazo al vencimiento.  \n"
             "- **Días para recuperar:** días hasta el primer pago en que lo cobrado acumulado (sin descontar) iguala lo que pagaste. "
             "Vacío si nunca lo recuperás con los pagos que quedan.  \n"
@@ -668,6 +810,8 @@ with tab5:
                    f"Liquidación estimada: {liq:%d/%m/%Y} (T+1, sin contar feriados).")
 
         with sub_l:
+            if modo_corto:
+                tope = st.slider("Mostrar letras que vencen en hasta (días)", 7, 90, 30)
             filas = []
             for l in crono["letras"]:
                 p = px.get(l["ticker"])
@@ -679,6 +823,17 @@ with tab5:
                               "Pago final": l["pago_final"], "Rend. al vto. %": rend * 100,
                               "TNA %": rend * 365 / dias * 100, "TEA %": ((1 + rend) ** (365 / dias) - 1) * 100,
                               "TEM %": ((1 + rend) ** (30 / dias) - 1) * 100})
+            if modo_corto:
+                filas = [f for f in filas if f["Días"] <= tope]
+            if modo_infl:
+                try:
+                    infl12, _ = inflacion_periodo(inflacion_serie(), pd.Timestamp(liq) - pd.Timedelta(days=365), pd.Timestamp(liq))
+                    for f in filas:
+                        f["TEA vs inflación 12m (p.p.)"] = f["TEA %"] - infl12
+                    st.caption(f"Inflación de los últimos 12 meses: {infl12:.1f}%. Las letras son a tasa fija: le ganan a la inflación "
+                               "solo si la inflación futura queda por debajo de su TEA, y eso no se sabe hoy.")
+                except Exception:
+                    st.caption("Inflación no disponible en este momento.")
             tabla_bonos(filas, {f["Instrumento"]: [(f["Vencimiento"], f["Pago final"])] for f in filas},
                         "rf_letras", liq, "No hay precios disponibles para las letras cargadas.")
             st.caption(f"{len(filas)} de {len(crono['letras'])} letras con precio. Si falta una letra reciente, hay que agregarla "
@@ -686,25 +841,29 @@ with tab5:
 
         with sub_s:
             filas, flujos = [], {}
-            for k, v in crono["soberanos"].items():
+            for k, v in ({} if modo_corto else crono["soberanos"]).items():
                 p = px.get(k + "D")
                 m = metricas_flujos(p, v["flujos"], liq, reinv, n_cap, nom_cap.lower()) if p else None
                 if m:
                     filas.append({"Instrumento": k, "Ley": v["ley"], "Precio USD": p, **m})
                     flujos[k] = v["flujos"]
-            tabla_bonos(filas, flujos, "rf_sob", liq, "No hay precios disponibles para los bonos soberanos.")
+            tabla_bonos(filas, flujos, "rf_sob", liq, "En el modo corto plazo no se muestran bonos: sus plazos son largos y su precio varía." if modo_corto else "No hay precios disponibles para los bonos soberanos.")
+            if modo_infl:
+                st.caption("Estos bonos están en dólares y a tasa fija: no están indexados por CER.")
             st.caption("Precio en dólares MEP (símbolo terminado en D), por 100 de valor nominal original. "
                        "La TIR usa el precio de pantalla sin ajustar intereses corridos.")
 
         with sub_o:
             filas, flujos = [], {}
-            for k, v in crono["ons"].items():
+            for k, v in ({} if modo_corto else crono["ons"]).items():
                 p = px.get(v["precio_ticker"])
                 m = metricas_flujos(p, v["flujos"], liq, reinv, n_cap, nom_cap.lower()) if p else None
                 if m:
                     filas.append({"Instrumento": k, "Emisor": v["nombre"], "Precio USD": p, **m})
                     flujos[k] = v["flujos"]
-            tabla_bonos(filas, flujos, "rf_ons", liq, "No hay precios disponibles para las ONs cargadas.")
+            tabla_bonos(filas, flujos, "rf_ons", liq, "En el modo corto plazo no se muestran ONs: sus plazos son largos y su precio varía." if modo_corto else "No hay precios disponibles para las ONs cargadas.")
+            if modo_infl:
+                st.caption("Estas ONs están en dólares y a tasa fija: no están indexadas por CER.")
             st.caption("Las ONs con poca operación pueden tener precios poco representativos: mirá el spread y el volumen "
                        "en tu broker antes de usar la TIR. La TIR usa el precio de pantalla sin ajustar intereses corridos.")
 
