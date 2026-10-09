@@ -196,9 +196,32 @@ def ranking_fci(tipo, dias):
     m["dias_reales"] = (pd.to_datetime(m["fecha"]) - pd.to_datetime(m["fecha_ant"])).dt.days
     m = m[(m["dias_reales"] > 0) & (m["vcp_ant"] > 0) & (m["vcp"] > 0)].copy()
     m["Rend. período %"] = (m["vcp"] / m["vcp_ant"] - 1) * 100
-    m["TNA equiv. %"] = m["Rend. período %"] * 365 / m["dias_reales"]
+    # TEA: rendimiento anualizado CON capitalización (comparable entre fondos y con otras tasas)
+    m["TEA %"] = ((m["vcp"] / m["vcp_ant"]) ** (365 / m["dias_reales"]) - 1) * 100
     m["Patrimonio (M)"] = m["patrimonio"] / 1e6
     return m
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def tasa_deposito_30d():
+    """Tasa de depósitos a 30 días (promedio de bancos, BCRA). Devuelve (TNA %, fecha)."""
+    r = requests.get(f"{API}/tasas/depositos30Dias", timeout=20)
+    r.raise_for_status()
+    df = pd.DataFrame(r.json()).dropna()
+    df["fecha"] = pd.to_datetime(df["fecha"])
+    ult = df.sort_values("fecha").iloc[-1]
+    v = float(ult["valor"])
+    return (v if v > 1 else v * 100), ult["fecha"].date()   # puede venir en % o como fracción
+
+
+def tea_de_tna30(tna_pct):
+    """TEA % de un plazo fijo a 30 días con esa TNA % (interés simple a 30 días, luego reinvertido)."""
+    return ((1 + tna_pct / 100 * 30 / 365) ** (365 / 30) - 1) * 100
+
+
+def tna30_de_tea(tea_pct):
+    """TNA % de un plazo fijo a 30 días que rendiría lo mismo que esa TEA %."""
+    return ((1 + tea_pct / 100) ** (30 / 365) - 1) * 365 / 30 * 100
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -342,8 +365,20 @@ with tab3:
         if r.empty:
             st.warning("No se pudieron armar datos para ese período.")
         else:
-            r = r[r["Patrimonio (M)"] >= min_pat].sort_values("Rend. período %", ascending=False)
-            cols = ["fondo", "horizonte", "Rend. período %", "TNA equiv. %", "Patrimonio (M)", "fecha"]
+            r = r[r["Patrimonio (M)"] >= min_pat].sort_values("Rend. período %", ascending=False).copy()
+            r["Equiv. TNA plazo fijo 30d %"] = tna30_de_tea(r["TEA %"])
+            cols = ["fondo", "horizonte", "Rend. período %", "TEA %", "Equiv. TNA plazo fijo 30d %"]
+            try:
+                tna_ref, f_ref = tasa_deposito_30d()
+                tea_ref = tea_de_tna30(tna_ref)
+                r["TEA vs referencia (p.p.)"] = r["TEA %"] - tea_ref
+                cols.append("TEA vs referencia (p.p.)")
+                st.info(f"Referencia: depósitos a 30 días (promedio de bancos, BCRA, al {f_ref}): "
+                        f"TNA {tna_ref:.1f}% = TEA {tea_ref:.1f}%. Un fondo con 'TEA vs referencia' positiva "
+                        "rindió más que depositar a plazo fijo en el período.")
+            except Exception:
+                st.caption("Tasa de referencia no disponible en este momento.")
+            cols += ["Patrimonio (M)", "fecha"]
             st.dataframe(
                 r[cols].head(30).rename(columns={"fondo": "Fondo", "horizonte": "Horizonte", "fecha": "Dato al"})
                 .reset_index(drop=True).style.format(precision=2, na_rep="-"),
@@ -351,8 +386,12 @@ with tab3:
             )
     except Exception as e:
         st.error(f"No se pudo consultar la API de FCI ahora: {e}")
-    st.caption("Fuente: CNV vía ArgentinaDatos. Rendimiento pasado no garantiza resultados futuros. "
-               "Puede haber fondos en dólares mezclados: no comparar directo con fondos en pesos.")
+    st.caption("Fuente: CNV vía ArgentinaDatos. **Rend. período** es la variación real de la cuotaparte (ya incluye la "
+               "capitalización). **TEA** lo anualiza con interés compuesto, así que es comparable entre fondos y con otras "
+               "tasas; la TNA no lo es. En fondos de renta fija y variable, anualizar períodos cortos exagera: el valor "
+               "sube y baja. 'Equiv. TNA plazo fijo' dice qué TNA a 30 días daría lo mismo que el fondo, para compararlo con "
+               "lo que ofrece un banco. Rendimiento pasado no garantiza resultados futuros. Puede haber fondos en dólares mezclados: "
+               "no comparar directo con fondos en pesos.")
 
 # --- 4. Simulador -----------------------------------------------------------
 with tab4:
