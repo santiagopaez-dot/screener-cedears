@@ -86,6 +86,26 @@ def color_rsi(v, lo=30, hi=70):
     return ""
 
 
+def color_roe(v):
+    if pd.isna(v):
+        return ""
+    if v >= 15:
+        return "background-color: #c8e6c9"
+    if v >= 8:
+        return "background-color: #fff9c4"
+    return "background-color: #ffcdd2"
+
+
+def color_deuda(v):
+    if pd.isna(v):
+        return ""
+    if v <= 2:
+        return "background-color: #c8e6c9"
+    if v <= 4:
+        return "background-color: #fff9c4"
+    return "background-color: #ffcdd2"
+
+
 def color_yield(v):
     if pd.isna(v) or v == 0:
         return "background-color: #e0e0e0; color: #555"
@@ -340,42 +360,17 @@ def kpis_macro():
         out["rp"] = (float(d["valor"].iloc[-1]), float(d["valor"].iloc[-1] - d["valor"].iloc[-2]))
     except Exception:
         pass
-    try:   # S&P 500
-        h = yf.download("^GSPC", period="5d", auto_adjust=True, progress=False)["Close"].squeeze().dropna()
-        out["spx"] = (float(h.iloc[-1]), float((h.iloc[-1] / h.iloc[-2] - 1) * 100))
+    try:   # índices de EE.UU. y Merval
+        idx = yf.download(["^GSPC", "^IXIC", "^DJI", "^MERV"], period="5d", auto_adjust=True, progress=False)["Close"]
+        for sym in idx.columns:
+            h = idx[sym].dropna()
+            if len(h) >= 2:
+                out[sym] = (float(h.iloc[-1]), float((h.iloc[-1] / h.iloc[-2] - 1) * 100))
+        if "^MERV" in out and "contadoconliqui" in out:
+            out["merv_usd"] = out["^MERV"][0] / out["contadoconliqui"]   # Merval en dólares CCL
     except Exception:
         pass
     return out
-
-
-@st.cache_data(ttl=6 * 3600, show_spinner=False)
-def inflacion_serie():
-    r = requests.get(f"{API}/indices/inflacion", timeout=25)
-    r.raise_for_status()
-    d = pd.DataFrame(r.json()).dropna()
-    d["fecha"] = pd.to_datetime(d["fecha"])
-    return d.sort_values("fecha").reset_index(drop=True)
-
-
-def inflacion_periodo(serie, ini, fin):
-    """Inflación acumulada (%) entre dos fechas. Prorratea por días los meses parciales y, si el último mes
-    todavía no se publicó, extiende el último dato mensual. Devuelve (inflación %, ¿se extendió?)."""
-    s = serie.assign(mes=serie["fecha"].dt.to_period("M")).drop_duplicates("mes", keep="last").set_index("mes")["valor"]
-    s = s.sort_index()
-    acum, extendido = 1.0, False
-    for mes in pd.period_range(ini.to_period("M"), fin.to_period("M")):
-        ms = mes.start_time.normalize()
-        me = ms + pd.offsets.MonthBegin(1)
-        solape = (min(fin, me) - max(ini, ms)).days
-        if solape <= 0:
-            continue
-        if mes in s.index:
-            tasa = s[mes]
-        else:
-            tasa = s.iloc[-1] if mes > s.index[-1] else s.iloc[0]
-            extendido = extendido or mes > s.index[-1]
-        acum *= (1 + tasa / 100) ** (solape / (me - ms).days)
-    return (acum - 1) * 100, extendido
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
@@ -391,6 +386,140 @@ def mep_hist():
 def mep_en(d, fecha):
     sub = d[d["fecha"] <= fecha]
     return float(sub["mep"].iloc[-1]) if len(sub) else np.nan
+
+
+OBJ = ["Ver todo", "Guardar plata a corto plazo", "Ganarle a la inflación"]
+
+
+def selector_objetivo(key):
+    obj = st.radio("¿Qué querés ver?", OBJ, horizontal=True, key=key)
+    corto, infl = obj == OBJ[1], obj == OBJ[2]
+    if corto:
+        st.info("**Corto plazo:** muestra fondos de mercado de dinero (30 días) y letras que vencen pronto. Las cauciones todavía no están "
+                "cargadas. Es un filtro informativo, no una recomendación: un fondo de mercado de dinero no garantiza rendimiento y una letra "
+                "solo devuelve lo prometido si la mantenés hasta el vencimiento.")
+    elif infl:
+        st.info("**Inflación:** muestra lo que rinde por encima de la inflación **esperada** (la del REM del BCRA, que podés cambiar). "
+                "Los bonos CER (indexados) todavía no están cargados. Es un filtro informativo: lo que pasó no garantiza lo que va a pasar.")
+    return corto, infl
+
+
+def _plano(x):
+    return unicodedata.normalize("NFKD", str(x)).encode("ascii", "ignore").decode().lower()
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def rem_inflacion():
+    """Inflación esperada anual según el último REM del BCRA. Devuelve (valor % anual o None, nota o None)."""
+    try:
+        r = requests.get(f"{API}/rem/ultimo", timeout=25)
+        r.raise_for_status()
+        d = pd.DataFrame(r.json())
+        if d.empty or "indicador" not in d:
+            return None, None
+        ind = d["indicador"].map(_plano)
+        ipc = d[ind.str.contains("precios minoristas|ipc", regex=True) & ~ind.str.contains("nucleo|core|subyacente", regex=True)].copy()
+        if ipc.empty:
+            return None, None
+        vacio = pd.Series("", index=ipc.index)
+        per = ipc["periodo"].map(_plano) if "periodo" in ipc else vacio
+        uni = ipc["unidad"].map(_plano) if "unidad" in ipc else vacio
+        informe = str(ipc["informe"].iloc[0]) if "informe" in ipc else ""
+        med = pd.to_numeric(ipc["mediana"], errors="coerce") if "mediana" in ipc else pd.Series(np.nan, index=ipc.index)
+        anual = ipc[per.str.contains("12 meses") & ~uni.str.contains("mensual") & med.notna()]
+        if len(anual):
+            v = float(med[anual.index[0]])
+            v = v * 100 if v < 3 else v
+            return v, f"Según el REM ({informe}), la inflación esperada para los próximos 12 meses es **{v:.1f}%** (mediana de los analistas)."
+        mens = ipc[uni.str.contains("mensual") & med.notna()]
+        if len(mens):
+            m = float(med[mens.index[:3]].mean())
+            v = ((1 + m / 100) ** 12 - 1) * 100
+            return v, (f"Según el REM ({informe}), la inflación mensual esperada ronda **{m:.1f}%** (mediana, próximos meses), "
+                       f"equivalente a unos **{v:.0f}%** anual.")
+    except Exception:
+        pass
+    return None, None
+
+
+# ----------------------------------------------------------------------------
+# Simulador de cartera: valor diario, rendimiento ajustado por aportes (TWR) y TIR del dinero (XIRR)
+# ----------------------------------------------------------------------------
+@st.cache_data(ttl=3600, show_spinner="Descargando precios de la cartera...")
+def precios_cartera(tickers, inicio):
+    d = yf.download(list(tickers), start=inicio, auto_adjust=False, progress=False)["Close"]
+    if isinstance(d, pd.Series):
+        d = d.to_frame(tickers[0])
+    return d.ffill()
+
+
+def calcular_cartera(ops, close, mep=None):
+    """ops: Fecha, Operación (Compra/Venta/Depósito/Retiro), Ticker, Cantidad, Monto, Moneda.
+    close: precios diarios en USD por ticker. mep: Serie con pesos por dólar (opcional).
+    Compras y ventas al cierre del día (o del primer día de mercado posterior)."""
+    ops = ops.copy()
+    ops["Fecha"] = pd.to_datetime(ops["Fecha"])
+    idx = close.index[close.index >= ops["Fecha"].min()]
+    if len(idx) == 0:
+        raise ValueError("No hay precios desde la fecha de la primera operación.")
+    if mep is not None:
+        mep = mep.reindex(mep.index.union(idx)).ffill().bfill().reindex(idx)
+    qty = pd.DataFrame(0.0, index=idx, columns=close.columns)
+    cash = pd.Series(0.0, index=idx)
+    flujo = pd.Series(0.0, index=idx)
+    for _, o in ops.sort_values("Fecha").iterrows():
+        pos = idx.searchsorted(o["Fecha"])
+        if pos >= len(idx):
+            continue
+        d, tipo = idx[pos], o["Operación"]
+        if tipo in ("Compra", "Venta"):
+            sg = 1 if tipo == "Compra" else -1
+            if o["Ticker"] not in close.columns:
+                raise ValueError(f"No hay precios de {o['Ticker']}.")
+            p = close.loc[d, o["Ticker"]]
+            if pd.isna(p):
+                raise ValueError(f"No hay precio de {o['Ticker']} el {d.date()}.")
+            qty.loc[d:, o["Ticker"]] += sg * o["Cantidad"]
+            cash.loc[d:] -= sg * o["Cantidad"] * p
+        else:
+            sg = 1 if tipo == "Depósito" else -1
+            if o["Moneda"] == "USD":
+                m = o["Monto"]
+            elif mep is None:
+                raise ValueError("Para operaciones en pesos hace falta el dólar MEP histórico, que no está disponible ahora.")
+            else:
+                m = o["Monto"] / mep.loc[d]
+            cash.loc[d:] += sg * m
+            flujo.loc[d] += sg * m
+    out = pd.DataFrame({"valor_usd": cash + (qty * close.reindex(idx)).sum(axis=1), "flujo_usd": flujo, "efectivo_usd": cash})
+    if mep is not None:
+        out["mep"] = mep
+        out["valor_ars"] = out["valor_usd"] * mep
+        out["flujo_ars"] = out["flujo_usd"] * mep
+    return out, qty
+
+
+def retorno_diario(valor, flujo):
+    """Retorno de cada día sin el efecto de los aportes: valor / (valor anterior + aporte del día) - 1."""
+    base = valor.shift(1).fillna(0) + flujo
+    return (valor / base - 1).where(base > 0, 0.0)
+
+
+def xirr(fechas, flujos, valor_final, fecha_final):
+    """TIR anual del dinero invertido (cada aporte pesa según cuánto tiempo estuvo invertido)."""
+    t = np.array([(f - fechas[0]).days / 365 for f in fechas])
+    tf = (fecha_final - fechas[0]).days / 365
+    f = lambda r: -np.sum(np.asarray(flujos) / (1 + r) ** t) + valor_final / (1 + r) ** tf
+    lo, hi = -0.99, 100.0
+    if f(lo) * f(hi) > 0:
+        return np.nan
+    for _ in range(200):
+        mid = (lo + hi) / 2
+        if f(lo) * f(mid) <= 0:
+            hi = mid
+        else:
+            lo = mid
+    return (lo + hi) / 2
 
 
 # ----------------------------------------------------------------------------
@@ -484,35 +613,36 @@ def tabla_bonos(filas, flujos_por_id, key, liq, aviso_vacio):
 # Pestañas
 # ----------------------------------------------------------------------------
 k = kpis_macro()
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("Dólar MEP", f"$ {k['bolsa']:,.0f}" if "bolsa" in k else "-")
-k2.metric("Dólar CCL", f"$ {k['contadoconliqui']:,.0f}" if "contadoconliqui" in k else "-")
+
+
+def tarjeta(col, titulo, clave, formato, delta_fmt=None, ayuda=None):
+    v = k.get(clave)
+    if v is None:
+        col.metric(titulo, "-")
+    elif isinstance(v, tuple):
+        col.metric(titulo, formato.format(v[0]), delta_fmt.format(v[1]) if delta_fmt else None, help=ayuda)
+    else:
+        col.metric(titulo, formato.format(v), help=ayuda)
+
+
+f1 = st.columns(4)
+tarjeta(f1[0], "Dólar MEP", "bolsa", "$ {:,.0f}")
+tarjeta(f1[1], "Dólar CCL", "contadoconliqui", "$ {:,.0f}")
 if "rp" in k:
-    k3.metric("Riesgo país", f"{k['rp'][0]:,.0f} pb", f"{k['rp'][1]:+.0f} pb", delta_color="inverse",
-              help="Variación respecto de la rueda anterior. Si sube, el mercado ve más riesgo (en rojo).")
+    f1[2].metric("Riesgo país", f"{k['rp'][0]:,.0f} pb", f"{k['rp'][1]:+.0f} pb", delta_color="inverse",
+                 help="Variación respecto de la rueda anterior. Si sube, el mercado ve más riesgo (en rojo).")
 else:
-    k3.metric("Riesgo país", "-")
-if "spx" in k:
-    k4.metric("S&P 500", f"{k['spx'][0]:,.0f}", f"{k['spx'][1]:+.2f}%")
-else:
-    k4.metric("S&P 500", "-")
+    f1[2].metric("Riesgo país", "-")
+tarjeta(f1[3], "Merval en USD (CCL)", "merv_usd", "US$ {:,.0f}", ayuda="Merval en pesos dividido el dólar CCL de hoy.")
+f2 = st.columns(4)
+tarjeta(f2[0], "S&P 500", "^GSPC", "{:,.0f}", "{:+.2f}%")
+tarjeta(f2[1], "Nasdaq", "^IXIC", "{:,.0f}", "{:+.2f}%")
+tarjeta(f2[2], "Dow Jones", "^DJI", "{:,.0f}", "{:+.2f}%")
+tarjeta(f2[3], "Merval (en pesos)", "^MERV", "{:,.0f}", "{:+.2f}%")
 
-OBJ = ["Ver todo", "Guardar plata a corto plazo", "Ganarle a la inflación"]
-objetivo = st.radio("¿Qué querés ver?", OBJ, horizontal=True,
-                    help="Filtra y ordena el Ranking FCI y la pestaña de Renta fija. No cambia las pestañas de CEDEARs.")
-modo_corto, modo_infl = objetivo == OBJ[1], objetivo == OBJ[2]
-if modo_corto:
-    st.info("**Corto plazo:** muestra fondos de mercado de dinero (30 días) y letras que vencen pronto. Las cauciones todavía no están "
-            "cargadas. Es un filtro informativo, no una recomendación: un fondo de mercado de dinero no garantiza rendimiento y una letra "
-            "solo devuelve lo prometido si la mantenés hasta el vencimiento.")
-elif modo_infl:
-    st.info("**Inflación:** muestra los fondos que rindieron por encima de la inflación en el período y compara las letras con la inflación "
-            "de los últimos 12 meses. Los bonos CER (indexados) todavía no están cargados. Es un filtro informativo: lo que pasó no garantiza "
-            "lo que va a pasar.")
-
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📈 CEDEARs: Trading (RSI)", "💰 CEDEARs: Dividendos y ¿cara o barata?", "🏦 Ranking FCI",
-    "🧮 Simulador de tasas", "💵 Renta fija",
+    "🧮 Simulador de tasas", "💵 Renta fija", "💼 Simulador de cartera",
 ])
 
 close, vol = precios(tuple(TICKERS))
@@ -585,6 +715,7 @@ with tab2:
     val["Div. 12m USD"] = pd.Series(divs)
     val["Yield 12m %"] = val["Div. 12m USD"] / val["Precio USD"] * 100
     val = val.join(f[["P/E", "P/E futuro", "ROE %", "Deuda/EBITDA"]])
+    val.loc[val["Sector"] == "Financiero", "Deuda/EBITDA"] = np.nan   # no aplica a bancos y financieras
     val["Posición rango 52 sem. %"] = (close.iloc[-1] - close.min()) / (close.max() - close.min()) * 100
 
     # Mediana de P/E por sector, calculada sobre toda la lista (antes de filtrar)
@@ -619,16 +750,17 @@ with tab2:
         sub = v[v["Sector"] == sector].sort_values("Yield 12m %", ascending=False)[cols_v]
         with st.expander(f"{sector} ({len(sub)})", expanded=True):
             st.dataframe(
-                sub.style.map(color_yield, subset=["Yield 12m %"]).format(precision=2, na_rep="-"),
+                sub.style.map(color_yield, subset=["Yield 12m %"]).map(color_roe, subset=["ROE %"])
+                .map(color_deuda, subset=["Deuda/EBITDA"]).format(precision=2, na_rep="-"),
                 width="stretch",
             )
     st.markdown(
         "**Yield:** gris no paga · rojo <1,5% · amarillo 1,5–3% · verde 3–6% · naranja ≥6% (revisar por qué es tan alto). "
         "Es bruto, sobre la acción en NY; el CEDEAR cobra en pesos y con retención en origen.  \n"
-        "**ROE %:** ganancia sobre el patrimonio de los accionistas; más alto suele ser mejor, pero un patrimonio muy chico "
-        "(por recompras de acciones) lo infla.  \n"
-        "**Deuda/EBITDA:** cuántos años de ganancia operativa harían falta para pagar la deuda; arriba de 3 o 4 suele ser alto. "
-        "No es útil para bancos ni empresas financieras.  \n"
+        "**ROE %** (ganancia sobre el patrimonio de los accionistas): 🟢 15% o más · 🟡 entre 8% y 15% · 🔴 menos de 8% o negativo. "
+        "Un patrimonio muy chico (por recompras de acciones) lo infla.  \n"
+        "**Deuda/EBITDA** (años de ganancia operativa para pagar la deuda): 🟢 hasta 2 · 🟡 entre 2 y 4 · 🔴 más de 4. "
+        "No se muestra para el sector financiero, donde no aplica. Los cortes son convenciones generales: varían por sector.  \n"
         "**¿Cara o barata?** Compara el P/E contra la mediana de su sector en esta lista (barata <0,8× · cara >1,2×). "
         "Es una comparación **relativa**, no un valor intrínseco: una acción puede ser barata porque se esperan ganancias menores."
     )
@@ -636,11 +768,17 @@ with tab2:
 # --- 3. FCI -----------------------------------------------------------------
 with tab3:
     st.subheader("Ranking de Fondos Comunes de Inversión")
-    c1, c2, c3 = st.columns(3)
+    modo_corto, modo_infl = selector_objetivo("obj_fci")
+    rem_val, rem_nota = rem_inflacion()
+    c1, c2, c3, c4 = st.columns(4)
     tipo_n = c1.selectbox("Categoría", ["Mercado de dinero"] if modo_corto else list(TIPOS_FCI))
     dias = c2.selectbox("Período", [30, 90, 180, 365], index=0 if modo_corto else (3 if modo_infl else 1),
                         format_func=lambda x: f"{x} días")
     min_pat = c3.number_input("Patrimonio mínimo (millones)", min_value=0, value=1000, step=500)
+    infl_esp = c4.number_input("Inflación esperada anual (%)", min_value=0.0, max_value=500.0,
+                               value=float(round(rem_val, 1)) if rem_val else 25.0, step=0.5,
+                               help="Se usa para calcular el rendimiento real esperado. Por defecto, la del REM del BCRA; podés poner la tuya.")
+    st.caption(rem_nota if rem_nota else "No se pudo leer el REM: ingresá tu propia estimación de inflación anual.")
     try:
         r = ranking_fci(TIPOS_FCI[tipo_n], dias)
         if r.empty:
@@ -664,17 +802,8 @@ with tab3:
                         "Un fondo con 'TEA vs referencia' positiva rindió más que depositar a plazo fijo en ese mismo período.")
             except Exception:
                 st.caption("Tasa de referencia no disponible en este momento.")
-            try:
-                infl = inflacion_serie()
-                ini, fin = pd.to_datetime(r["fecha_ant"]), pd.to_datetime(r["fecha"])
-                mapa = {(a, b): inflacion_periodo(infl, a, b) for a, b in set(zip(ini, fin))}
-                r["Inflación período %"] = [mapa[(a, b)][0] for a, b in zip(ini, fin)]
-                r["Rend. real vs inflación %"] = ((1 + r["Rend. período %"] / 100) / (1 + r["Inflación período %"] / 100) - 1) * 100
-                cols += ["Inflación período %", "Rend. real vs inflación %"]
-                if any(v[1] for v in mapa.values()):
-                    st.caption("La inflación del último mes aún no está publicada: se estimó repitiendo el último dato mensual.")
-            except Exception:
-                st.caption("Inflación no disponible en este momento.")
+            r["TEA real vs infl. esperada %"] = ((1 + r["TEA %"] / 100) / (1 + infl_esp / 100) - 1) * 100
+            cols.append("TEA real vs infl. esperada %")
             try:
                 mep = mep_hist()
                 ini, fin = pd.to_datetime(r["fecha_ant"]), pd.to_datetime(r["fecha"])
@@ -685,10 +814,10 @@ with tab3:
             except Exception:
                 st.caption("Dólar MEP histórico no disponible en este momento.")
             cols += ["Patrimonio (M)", "fecha"]
-            if modo_infl and "Rend. real vs inflación %" in r:
-                r = r[r["Rend. real vs inflación %"] > 0].sort_values("Rend. real vs inflación %", ascending=False)
+            if modo_infl:
+                r = r[r["TEA real vs infl. esperada %"] > 0].sort_values("TEA real vs infl. esperada %", ascending=False)
                 if r.empty:
-                    st.info("Ningún fondo de esta categoría le ganó a la inflación en el período elegido.")
+                    st.info("Ningún fondo de esta categoría supera la inflación esperada con el rendimiento del período elegido.")
             mostrar = (r[cols].head(30)
                        .rename(columns={"fondo": "Fondo", "horizonte": "Horizonte", "fecha": "Dato al"})
                        .reset_index(drop=True))
@@ -717,8 +846,8 @@ with tab3:
                "tasas; la TNA no lo es. En fondos de renta fija y variable, anualizar períodos cortos exagera: el valor "
                "sube y baja. 'Equiv. TNA plazo fijo' dice qué TNA a 30 días daría lo mismo que el fondo, para compararlo con "
                "lo que ofrece un banco. Rendimiento pasado no garantiza resultados futuros. Puede haber fondos en dólares mezclados: "
-               "no comparar directo con fondos en pesos. 'Rend. real vs inflación' y 'Rend. en USD (MEP)' miden si el fondo "
-               "le ganó a la inflación y al dólar en el mismo período: un valor positivo es ganancia real.")
+               "no comparar directo con fondos en pesos. 'TEA real vs infl. esperada' compara la TEA del fondo con la inflación "
+               "esperada que figura arriba; 'Rend. en USD (MEP)' mide cuánto rindió en dólares en el período. Un valor positivo es ganancia real.")
 
 # --- 4. Simulador -----------------------------------------------------------
 with tab4:
@@ -761,6 +890,13 @@ with tab4:
 # --- 5. Renta fija ----------------------------------------------------------
 with tab5:
     st.subheader("Renta fija: deuda pública y privada")
+    modo_corto, modo_infl = selector_objetivo("obj_rf")
+    if modo_infl:
+        rem_val2, rem_nota2 = rem_inflacion()
+        infl_rf = st.number_input("Inflación esperada anual (%)", min_value=0.0, max_value=500.0,
+                                  value=float(round(rem_val2, 1)) if rem_val2 else 25.0, step=0.5,
+                                  help="Por defecto, la del REM del BCRA; podés poner la tuya.")
+        st.caption(rem_nota2 if rem_nota2 else "No se pudo leer el REM: ingresá tu propia estimación de inflación anual.")
     try:
         rp = riesgo_pais()
         st.metric("Riesgo país (puntos básicos)", rp.get("valor"), help=f"Dato al {rp.get('fecha')}")
@@ -826,14 +962,10 @@ with tab5:
             if modo_corto:
                 filas = [f for f in filas if f["Días"] <= tope]
             if modo_infl:
-                try:
-                    infl12, _ = inflacion_periodo(inflacion_serie(), pd.Timestamp(liq) - pd.Timedelta(days=365), pd.Timestamp(liq))
-                    for f in filas:
-                        f["TEA vs inflación 12m (p.p.)"] = f["TEA %"] - infl12
-                    st.caption(f"Inflación de los últimos 12 meses: {infl12:.1f}%. Las letras son a tasa fija: le ganan a la inflación "
-                               "solo si la inflación futura queda por debajo de su TEA, y eso no se sabe hoy.")
-                except Exception:
-                    st.caption("Inflación no disponible en este momento.")
+                for f in filas:
+                    f["TEA real vs infl. esperada %"] = ((1 + f["TEA %"] / 100) / (1 + infl_rf / 100) - 1) * 100
+                st.caption(f"Se compara la TEA de cada letra con una inflación esperada de {infl_rf:.1f}% anual. Las letras son a tasa fija: "
+                           "si la inflación real termina por encima de ese número, el rendimiento real es menor.")
             tabla_bonos(filas, {f["Instrumento"]: [(f["Vencimiento"], f["Pago final"])] for f in filas},
                         "rf_letras", liq, "No hay precios disponibles para las letras cargadas.")
             st.caption(f"{len(filas)} de {len(crono['letras'])} letras con precio. Si falta una letra reciente, hay que agregarla "
@@ -912,6 +1044,128 @@ with tab5:
             st.caption("Modelo simple: amortización al final (bullet) y precio sucio. "
                        "Los bonos que amortizan por partes necesitan el cronograma real de pagos.")
         st.warning("La TIR en dólares (bonos y ONs hard dollar) no se compara directo con tasas en pesos.")
+
+# --- 6. Simulador de cartera ---------------------------------------------------
+with tab6:
+    st.subheader("Simulador de cartera: rendimiento ajustado por depósitos y retiros")
+    st.caption("Cargá tus operaciones (depósitos, retiros, compras y ventas) y mirá cómo evolucionó la cartera en dólares y en pesos. "
+               "El rendimiento (TWR) **no se infla ni se achica por los aportes**: mide qué hizo la cartera con el dinero que tenía cada día. "
+               "Tus datos no se guardan en la página: descargá el CSV para conservarlos.")
+    hoy = date.today()
+    base = pd.DataFrame([
+        {"Fecha": hoy - timedelta(days=150), "Operación": "Depósito", "Ticker": "", "Cantidad": None, "Monto": 3000.0, "Moneda": "USD"},
+        {"Fecha": hoy - timedelta(days=150), "Operación": "Compra", "Ticker": "AAPL", "Cantidad": 8.0, "Monto": None, "Moneda": "USD"},
+        {"Fecha": hoy - timedelta(days=150), "Operación": "Compra", "Ticker": "KO", "Cantidad": 20.0, "Monto": None, "Moneda": "USD"},
+        {"Fecha": hoy - timedelta(days=90), "Operación": "Depósito", "Ticker": "", "Cantidad": None, "Monto": 1500000.0, "Moneda": "ARS"},
+        {"Fecha": hoy - timedelta(days=90), "Operación": "Compra", "Ticker": "MSFT", "Cantidad": 2.0, "Monto": None, "Moneda": "USD"},
+        {"Fecha": hoy - timedelta(days=45), "Operación": "Retiro", "Ticker": "", "Cantidad": None, "Monto": 300.0, "Moneda": "USD"},
+    ])
+    up = st.file_uploader("Cargar operaciones guardadas (CSV)", type="csv", key="cart_up")
+    if up is not None:
+        try:
+            base = pd.read_csv(up)
+            base["Fecha"] = pd.to_datetime(base["Fecha"]).dt.date
+        except Exception:
+            st.warning("No se pudo leer el CSV. Tiene que tener las columnas: Fecha, Operación, Ticker, Cantidad, Monto, Moneda.")
+    ed = st.data_editor(
+        base, num_rows="dynamic", width="stretch", key="cart_ops",
+        column_config={
+            "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+            "Operación": st.column_config.SelectboxColumn("Operación", options=["Depósito", "Retiro", "Compra", "Venta"], required=True),
+            "Ticker": st.column_config.TextColumn("Ticker (de NY)", help="Para compras y ventas. Ej: AAPL, KO, MSFT."),
+            "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.0, format="%.4f", help="Para compras y ventas."),
+            "Monto": st.column_config.NumberColumn("Monto", min_value=0.0, help="Para depósitos y retiros."),
+            "Moneda": st.column_config.SelectboxColumn("Moneda del monto", options=["USD", "ARS"]),
+        })
+    st.download_button("Descargar operaciones (CSV)", ed.to_csv(index=False).encode("utf-8"), "operaciones.csv", "text/csv")
+
+    ops = ed.dropna(subset=["Fecha", "Operación"]).copy()
+    ops["Ticker"] = ops["Ticker"].fillna("").astype(str).str.upper().str.strip()
+    ops["Moneda"] = ops["Moneda"].fillna("USD")
+    mov = ops["Operación"].isin(["Compra", "Venta"])
+    malas = ops[(mov & ((ops["Ticker"] == "") | ~(ops["Cantidad"] > 0))) | (~mov & ~(ops["Monto"] > 0))]
+    if len(malas):
+        st.error(f"{len(malas)} fila(s) incompletas se ignoran: las compras y ventas necesitan ticker y cantidad; "
+                 "los depósitos y retiros, un monto.")
+        ops = ops.drop(malas.index)
+    tickers = sorted(ops.loc[ops["Operación"].isin(["Compra", "Venta"]), "Ticker"].unique())
+    if ops.empty or not tickers:
+        st.info("Cargá al menos un depósito y una compra para ver los resultados.")
+    else:
+        try:
+            inicio = (pd.to_datetime(ops["Fecha"]).min() - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
+            close = precios_cartera(tuple(tickers), inicio)
+            faltan = [t for t in tickers if t not in close.columns or close[t].dropna().empty]
+            if faltan:
+                st.error(f"No encontré precios para: {', '.join(faltan)}. Usá el ticker de Nueva York (ej. AAPL).")
+                st.stop()
+            try:
+                md = mep_hist()
+                mep = md.set_index("fecha")["mep"]
+            except Exception:
+                mep = None
+                st.caption("Dólar MEP histórico no disponible: solo se muestra la cartera en dólares.")
+            res, qty = calcular_cartera(ops, close, mep)
+        except ValueError as e:
+            st.error(str(e))
+            st.stop()
+        except Exception as e:
+            st.error(f"No se pudo calcular la cartera: {e}")
+            st.stop()
+
+        if (res["efectivo_usd"] < -0.01).any():
+            st.warning("En algún momento compraste más de lo que tenías en efectivo (efectivo negativo). Agregá un depósito antes de esa compra, "
+                       "o el rendimiento va a reflejar dinero que no pusiste.")
+        if (qty < -1e-9).any().any():
+            st.warning("Hay ventas por más acciones de las que tenías.")
+
+        def resumen(v, f):
+            r = retorno_diario(v, f)
+            fl = f[f != 0]
+            tir = xirr(list(fl.index), list(fl.values), v.iloc[-1], v.index[-1]) if len(fl) and (v.index[-1] - fl.index[0]).days >= 60 else np.nan
+            return r, {"Valor actual": v.iloc[-1], "Aportes netos (depósitos − retiros)": f.sum(),
+                       "Ganancia": v.iloc[-1] - f.sum(), "Rendimiento ajustado por aportes (TWR) %": ((1 + r).prod() - 1) * 100,
+                       "TIR anual del dinero %": tir * 100}
+
+        r_usd, m_usd = resumen(res["valor_usd"], res["flujo_usd"])
+        tabla_res = pd.DataFrame({"USD": m_usd})
+        r_ars = None
+        if "valor_ars" in res:
+            r_ars, m_ars = resumen(res["valor_ars"], res["flujo_ars"])
+            tabla_res["Pesos (ARS)"] = pd.Series(m_ars)
+        st.markdown(f"**Resumen del {res.index[0]:%d/%m/%Y} al {res.index[-1]:%d/%m/%Y}**")
+        st.dataframe(tabla_res.style.format(precision=2, na_rep="-"), width="stretch")
+        st.caption("**TWR** encadena el rendimiento de cada día quitando el efecto de los depósitos y retiros: es la medida para saber si "
+                   "elegiste bien las acciones. La **TIR del dinero** sí pesa cuándo pusiste cada monto (se calcula con 60 días o más). "
+                   "En pesos, el rendimiento incluye lo que subió o bajó el dólar MEP.")
+
+        opciones = ["USD"] + (["Pesos (ARS)"] if r_ars is not None else [])
+        mon = st.radio("Ver gráficos y detalle mensual en", opciones, horizontal=True, key="cart_mon")
+        if mon == "USD":
+            v, f, r = res["valor_usd"], res["flujo_usd"], r_usd
+        else:
+            v, f, r = res["valor_ars"], res["flujo_ars"], r_ars
+        st.line_chart(pd.DataFrame({"Valor de la cartera": v, "Aportes netos acumulados": f.cumsum()}))
+        st.line_chart(pd.DataFrame({"Rendimiento acumulado % (TWR)": ((1 + r).cumprod() - 1) * 100}))
+        mes = v.index.to_period("M").astype(str)
+        mensual = pd.DataFrame({"Rend. del mes % (TWR)": ((1 + r).groupby(mes).prod() - 1) * 100,
+                                "Aportes netos del mes": f.groupby(mes).sum(),
+                                "Valor al cierre": v.groupby(mes).last()})
+        mensual.index.name = "Mes"
+        st.markdown("**Mes a mes:** el rendimiento de cada mes no cambia aunque hayas depositado o retirado ese mes.")
+        st.dataframe(mensual.style.format(precision=2), width="stretch")
+
+        ult, px_ult = qty.iloc[-1], close.reindex(res.index).iloc[-1]
+        ten = pd.DataFrame({"Cantidad": ult, "Precio USD": px_ult[ult.index], "Valor USD": ult * px_ult[ult.index]})
+        ten = ten[ten["Cantidad"].abs() > 1e-9]
+        ten.loc["Efectivo (USD)"] = [np.nan, np.nan, res["efectivo_usd"].iloc[-1]]
+        ten["% de la cartera"] = ten["Valor USD"] / ten["Valor USD"].sum() * 100
+        ten.index.name = "Activo"
+        st.markdown("**Tenencia actual**")
+        st.dataframe(ten.style.format(precision=2, na_rep="-"), width="stretch")
+        st.caption("Compras y ventas al precio de cierre del día (o del siguiente día de mercado). Precios de Yahoo Finance en dólares. "
+                   "No incluye comisiones, impuestos ni dividendos. La conversión a pesos usa el dólar MEP de cada fecha.")
+
 
 st.divider()
 st.caption("Proyecto personal con fines informativos. No constituye asesoramiento financiero ni recomendación de inversión.")
