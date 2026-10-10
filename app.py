@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import re
 import json
+import altair as alt
 import unicodedata
 import requests
 from pathlib import Path
@@ -327,13 +328,6 @@ def mostrar_detalle(f):
             f"{x.get('calificadora', '')}: {x.get('calificacion', '')}" for x in cal))
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def riesgo_pais():
-    r = requests.get(f"{API}/indices/riesgo-pais/ultimo", timeout=15)
-    r.raise_for_status()
-    return r.json()
-
-
 # ----------------------------------------------------------------------------
 # Indicadores macro: tarjetas KPI, inflación y dólar MEP histórico
 # ----------------------------------------------------------------------------
@@ -454,23 +448,22 @@ def precios_cartera(tickers, inicio):
 
 
 def calcular_cartera(ops, close, mep=None):
-    """ops: Fecha, Operación (Compra/Venta/Depósito/Retiro), Ticker, Cantidad, Monto, Moneda.
+    """Operaciones posteriores al último día con precios (hoy, un fin de semana) se aplican con el último precio disponible.
+    ops: Fecha, Operación (Compra/Venta/Depósito/Retiro/Cambio), Ticker, Cantidad, Monto, Moneda, Ticker destino (solo Cambio).
     close: precios diarios en USD por ticker. mep: Serie con pesos por dólar (opcional).
     Compras y ventas al cierre del día (o del primer día de mercado posterior)."""
     ops = ops.copy()
     ops["Fecha"] = pd.to_datetime(ops["Fecha"])
     idx = close.index[close.index >= ops["Fecha"].min()]
-    if len(idx) == 0:
-        raise ValueError("No hay precios desde la fecha de la primera operación.")
+    if len(idx) == 0:                      # todas las operaciones son posteriores al último día con precios (fin de semana, feriado)
+        idx = close.index[-1:]
     if mep is not None:
         mep = mep.reindex(mep.index.union(idx)).ffill().bfill().reindex(idx)
     qty = pd.DataFrame(0.0, index=idx, columns=close.columns)
     cash = pd.Series(0.0, index=idx)
     flujo = pd.Series(0.0, index=idx)
     for _, o in ops.sort_values("Fecha").iterrows():
-        pos = idx.searchsorted(o["Fecha"])
-        if pos >= len(idx):
-            continue
+        pos = min(idx.searchsorted(o["Fecha"]), len(idx) - 1)   # primer día de mercado en o después; si no hay, el último disponible
         d, tipo = idx[pos], o["Operación"]
         if tipo in ("Compra", "Venta"):
             sg = 1 if tipo == "Compra" else -1
@@ -481,6 +474,16 @@ def calcular_cartera(ops, close, mep=None):
                 raise ValueError(f"No hay precio de {o['Ticker']} el {d.date()}.")
             qty.loc[d:, o["Ticker"]] += sg * o["Cantidad"]
             cash.loc[d:] -= sg * o["Cantidad"] * p
+        elif tipo == "Cambio":
+            t1, t2 = o["Ticker"], o.get("Ticker destino")
+            for t in (t1, t2):
+                if t not in close.columns:
+                    raise ValueError(f"No hay precios de {t}.")
+            p1, p2 = close.loc[d, t1], close.loc[d, t2]
+            if pd.isna(p1) or pd.isna(p2):
+                raise ValueError(f"No hay precio de {t1} o {t2} el {d.date()}.")
+            qty.loc[d:, t1] -= o["Cantidad"]
+            qty.loc[d:, t2] += o["Cantidad"] * p1 / p2      # se compra con lo obtenido de la venta; el efectivo no cambia
         else:
             sg = 1 if tipo == "Depósito" else -1
             if o["Moneda"] == "USD":
@@ -878,15 +881,6 @@ with tab4:
                "TEA = (1 + TNA/m)^m − 1. Con 30% de TNA: mensual ≈ 34,5% de TEA, diaria ≈ 35,0%. "
                "Con plazos que no son múltiplos exactos del período, es una aproximación.")
 
-    dias_x = np.arange(0, int(plazo) + 1)
-    graf = pd.DataFrame({
-        "Simple": monto * (1 + tna * dias_x / 365),
-        "Capit. mensual": monto * (1 + tna / 12) ** (12 * dias_x / 365),
-        "Capit. diaria": monto * (1 + tna / 365) ** dias_x,
-    }, index=dias_x)
-    graf.index.name = "Días"
-    st.line_chart(graf)
-
 # --- 5. Renta fija ----------------------------------------------------------
 with tab5:
     st.subheader("Renta fija: deuda pública y privada")
@@ -897,13 +891,6 @@ with tab5:
                                   value=float(round(rem_val2, 1)) if rem_val2 else 25.0, step=0.5,
                                   help="Por defecto, la del REM del BCRA; podés poner la tuya.")
         st.caption(rem_nota2 if rem_nota2 else "No se pudo leer el REM: ingresá tu propia estimación de inflación anual.")
-    try:
-        rp = riesgo_pais()
-        st.metric("Riesgo país (puntos básicos)", rp.get("valor"), help=f"Dato al {rp.get('fecha')}")
-        st.caption("El riesgo país es la sobretasa que pagan los bonos argentinos en dólares sobre los bonos del Tesoro de EE.UU. "
-                   "(100 puntos básicos = 1%). Es solo un indicador de contexto: **no entra en los cálculos de abajo**.")
-    except Exception:
-        st.caption("Riesgo país no disponible en este momento.")
     st.caption("Precios en vivo de data912 (no es tiempo real). La TIR es lo que rinde el instrumento **si lo mantenés hasta el "
                "vencimiento y el emisor paga todo**; no es una predicción.")
     liq = liquidacion()
@@ -1046,126 +1033,235 @@ with tab5:
         st.warning("La TIR en dólares (bonos y ONs hard dollar) no se compara directo con tasas en pesos.")
 
 # --- 6. Simulador de cartera ---------------------------------------------------
-with tab6:
-    st.subheader("Simulador de cartera: rendimiento ajustado por depósitos y retiros")
-    st.caption("Cargá tus operaciones (depósitos, retiros, compras y ventas) y mirá cómo evolucionó la cartera en dólares y en pesos. "
-               "El rendimiento (TWR) **no se infla ni se achica por los aportes**: mide qué hizo la cartera con el dinero que tenía cada día. "
-               "Tus datos no se guardan en la página: descargá el CSV para conservarlos.")
-    hoy = date.today()
-    base = pd.DataFrame([
-        {"Fecha": hoy - timedelta(days=150), "Operación": "Depósito", "Ticker": "", "Cantidad": None, "Monto": 3000.0, "Moneda": "USD"},
-        {"Fecha": hoy - timedelta(days=150), "Operación": "Compra", "Ticker": "AAPL", "Cantidad": 8.0, "Monto": None, "Moneda": "USD"},
-        {"Fecha": hoy - timedelta(days=150), "Operación": "Compra", "Ticker": "KO", "Cantidad": 20.0, "Monto": None, "Moneda": "USD"},
-        {"Fecha": hoy - timedelta(days=90), "Operación": "Depósito", "Ticker": "", "Cantidad": None, "Monto": 1500000.0, "Moneda": "ARS"},
-        {"Fecha": hoy - timedelta(days=90), "Operación": "Compra", "Ticker": "MSFT", "Cantidad": 2.0, "Monto": None, "Moneda": "USD"},
-        {"Fecha": hoy - timedelta(days=45), "Operación": "Retiro", "Ticker": "", "Cantidad": None, "Monto": 300.0, "Moneda": "USD"},
-    ])
-    up = st.file_uploader("Cargar operaciones guardadas (CSV)", type="csv", key="cart_up")
-    if up is not None:
-        try:
-            base = pd.read_csv(up)
-            base["Fecha"] = pd.to_datetime(base["Fecha"]).dt.date
-        except Exception:
-            st.warning("No se pudo leer el CSV. Tiene que tener las columnas: Fecha, Operación, Ticker, Cantidad, Monto, Moneda.")
-    ed = st.data_editor(
-        base, num_rows="dynamic", width="stretch", key="cart_ops",
-        column_config={
-            "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
-            "Operación": st.column_config.SelectboxColumn("Operación", options=["Depósito", "Retiro", "Compra", "Venta"], required=True),
-            "Ticker": st.column_config.TextColumn("Ticker (de NY)", help="Para compras y ventas. Ej: AAPL, KO, MSFT."),
-            "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.0, format="%.4f", help="Para compras y ventas."),
-            "Monto": st.column_config.NumberColumn("Monto", min_value=0.0, help="Para depósitos y retiros."),
-            "Moneda": st.column_config.SelectboxColumn("Moneda del monto", options=["USD", "ARS"]),
-        })
-    st.download_button("Descargar operaciones (CSV)", ed.to_csv(index=False).encode("utf-8"), "operaciones.csv", "text/csv")
+COLS_OPS = ["Fecha", "Operación", "Ticker", "Cantidad", "Monto", "Moneda", "Ticker destino"]
 
-    ops = ed.dropna(subset=["Fecha", "Operación"]).copy()
-    ops["Ticker"] = ops["Ticker"].fillna("").astype(str).str.upper().str.strip()
+
+def preparar_ops(ed):
+    ops = ed.copy()
+    for c in COLS_OPS:
+        if c not in ops:
+            ops[c] = None
+    ops = ops.dropna(subset=["Fecha", "Operación"])
+    for c in ("Ticker", "Ticker destino"):
+        ops[c] = ops[c].fillna("").astype(str).str.upper().str.strip()
     ops["Moneda"] = ops["Moneda"].fillna("USD")
-    mov = ops["Operación"].isin(["Compra", "Venta"])
-    malas = ops[(mov & ((ops["Ticker"] == "") | ~(ops["Cantidad"] > 0))) | (~mov & ~(ops["Monto"] > 0))]
-    if len(malas):
-        st.error(f"{len(malas)} fila(s) incompletas se ignoran: las compras y ventas necesitan ticker y cantidad; "
-                 "los depósitos y retiros, un monto.")
-        ops = ops.drop(malas.index)
-    tickers = sorted(ops.loc[ops["Operación"].isin(["Compra", "Venta"]), "Ticker"].unique())
-    if ops.empty or not tickers:
-        st.info("Cargá al menos un depósito y una compra para ver los resultados.")
-    else:
+    for c in ("Cantidad", "Monto"):
+        ops[c] = pd.to_numeric(ops[c], errors="coerce")
+    trade = ops["Operación"].isin(["Compra", "Venta"])
+    cambio = ops["Operación"] == "Cambio"
+    plata = ops["Operación"].isin(["Depósito", "Retiro"])
+    mala = ((trade & ((ops["Ticker"] == "") | ~(ops["Cantidad"] > 0)))
+            | (cambio & ((ops["Ticker"] == "") | (ops["Ticker destino"] == "") | ~(ops["Cantidad"] > 0)))
+            | (plata & ~(ops["Monto"] > 0)))
+    return ops[~mala], int(mala.sum())
+
+
+with tab6:
+    st.subheader("Simulador de cartera")
+    st.caption("Registrá tus movimientos y mirá cómo evoluciona la cartera en dólares y en pesos. El rendimiento (TWR) **no se infla ni se "
+               "achica por los depósitos y retiros**: mide qué hizo la cartera con el dinero que tenía cada día. Tus datos no se guardan en "
+               "la página: descargá el CSV del historial para conservarlos.")
+    hoy = date.today()
+    if "cart_ops" not in st.session_state:
+        d150, d90, d45 = hoy - timedelta(days=150), hoy - timedelta(days=90), hoy - timedelta(days=45)
+        st.session_state.cart_ops = pd.DataFrame([
+            [d150, "Depósito", "", None, 3000.0, "USD", ""], [d150, "Compra", "AAPL", 8.0, None, "USD", ""],
+            [d150, "Compra", "KO", 20.0, None, "USD", ""], [d90, "Depósito", "", None, 1500000.0, "ARS", ""],
+            [d90, "Compra", "MSFT", 2.0, None, "USD", ""], [d45, "Retiro", "", None, 300.0, "USD", ""],
+        ], columns=COLS_OPS)
+        st.session_state.cart_ver = 0
+
+    c_form, c_res, c_hist = st.container(), st.container(), st.container()
+
+    # ---- Historial (se dibuja al final de la página, pero se lee primero) ----
+    with c_hist:
+        st.markdown("### Historial de movimientos")
+        st.caption("Es el **registro de todo lo que hiciste**, en orden. Podés corregir una fila, borrarla (seleccionala y apretá Supr) o "
+                   "agregar una a mano. La **tenencia actual** de arriba es el resultado de aplicar todos estos movimientos.")
+        up = st.file_uploader("Cargar un historial guardado (CSV)", type="csv", key="cart_up")
+        if up is not None and st.session_state.get("cart_up_name") != up.name:
+            try:
+                nuevo_df = pd.read_csv(up)
+                nuevo_df["Fecha"] = pd.to_datetime(nuevo_df["Fecha"]).dt.date
+                st.session_state.cart_ops = nuevo_df.reindex(columns=COLS_OPS)
+                st.session_state.cart_up_name = up.name
+                st.session_state.cart_ver += 1
+                st.rerun()
+            except Exception:
+                st.warning("No se pudo leer el CSV. Tiene que tener las columnas: " + ", ".join(COLS_OPS) + ".")
+        ed = st.data_editor(
+            st.session_state.cart_ops, num_rows="dynamic", width="stretch", key=f"cart_ed_{st.session_state.cart_ver}",
+            column_config={
+                "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                "Operación": st.column_config.SelectboxColumn("Operación", options=["Depósito", "Retiro", "Compra", "Venta", "Cambio"], required=True,
+                                                              help="Cambio: vende 'Ticker' y compra 'Ticker destino' con lo obtenido."),
+                "Ticker": st.column_config.TextColumn("Ticker", help="Compras, ventas y cambios (el que se vende)."),
+                "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.0, format="%.4f"),
+                "Monto": st.column_config.NumberColumn("Monto", min_value=0.0, help="Para depósitos y retiros."),
+                "Moneda": st.column_config.SelectboxColumn("Moneda del monto", options=["USD", "ARS"]),
+                "Ticker destino": st.column_config.TextColumn("Cambia por", help="Solo para 'Cambio': la acción que se compra."),
+            })
+        st.session_state.cart_ops = ed
+        st.download_button("Descargar historial (CSV)", ed.to_csv(index=False).encode("utf-8"), "historial_cartera.csv", "text/csv")
+
+    # ---- Cálculo ----
+    ops, n_malas = preparar_ops(ed)
+    res = qty = close = None
+    error = None
+    tickers = sorted(set(ops.loc[ops["Operación"].isin(["Compra", "Venta", "Cambio"]), "Ticker"])
+                     | set(ops.loc[ops["Operación"] == "Cambio", "Ticker destino"]))
+    if not ops.empty and tickers:
         try:
             inicio = (pd.to_datetime(ops["Fecha"]).min() - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
             close = precios_cartera(tuple(tickers), inicio)
             faltan = [t for t in tickers if t not in close.columns or close[t].dropna().empty]
             if faltan:
-                st.error(f"No encontré precios para: {', '.join(faltan)}. Usá el ticker de Nueva York (ej. AAPL).")
-                st.stop()
-            try:
-                md = mep_hist()
-                mep = md.set_index("fecha")["mep"]
-            except Exception:
-                mep = None
-                st.caption("Dólar MEP histórico no disponible: solo se muestra la cartera en dólares.")
-            res, qty = calcular_cartera(ops, close, mep)
+                error = f"No encontré precios para: {', '.join(faltan)}. Usá el ticker de Nueva York (ej. AAPL)."
+            else:
+                try:
+                    mep = mep_hist().set_index("fecha")["mep"]
+                except Exception:
+                    mep = None
+                res, qty = calcular_cartera(ops, close, mep)
         except ValueError as e:
-            st.error(str(e))
-            st.stop()
+            error = str(e)
         except Exception as e:
-            st.error(f"No se pudo calcular la cartera: {e}")
-            st.stop()
+            error = f"No se pudo calcular la cartera: {e}"
+    ult_qty = qty.iloc[-1] if qty is not None else pd.Series(dtype=float)
+    tenidas = [t for t in ult_qty.index if ult_qty[t] > 1e-9]
 
-        if (res["efectivo_usd"] < -0.01).any():
-            st.warning("En algún momento compraste más de lo que tenías en efectivo (efectivo negativo). Agregá un depósito antes de esa compra, "
-                       "o el rendimiento va a reflejar dinero que no pusiste.")
-        if (qty < -1e-9).any().any():
-            st.warning("Hay ventas por más acciones de las que tenías.")
+    # ---- Formulario para registrar movimientos ----
+    with c_form:
+        st.markdown("### Agregar un movimiento")
+        tipo = st.radio("¿Qué querés hacer?", ["Depositar dinero", "Retirar dinero", "Comprar acciones", "Vender acciones",
+                                               "Cambiar una acción por otra"], horizontal=True, key="cart_tipo")
+        fila, falta = None, None
+        with st.form("cart_form", clear_on_submit=True):
+            fch = st.date_input("Fecha", value=hoy, max_value=hoy, format="DD/MM/YYYY")
+            g1, g2 = st.columns(2)
+            if tipo in ("Depositar dinero", "Retirar dinero"):
+                monto = g1.number_input("Monto", min_value=0.0, step=100.0)
+                mon = g2.selectbox("Moneda", ["USD", "ARS"])
+            elif tipo == "Comprar acciones":
+                tk = g1.text_input("Ticker (de Nueva York)", placeholder="Ej: TSLA")
+                cant = g2.number_input("Cantidad", min_value=0.0, step=1.0)
+                st.caption("Se compra al precio de cierre del día. Si no tenés efectivo suficiente, primero depositá dinero.")
+            elif tipo == "Vender acciones":
+                tk = g1.selectbox("Acción que vendés", tenidas or ["(no tenés acciones)"])
+                cant = g2.number_input("Cantidad", min_value=0.0, step=1.0,
+                                       help=f"Tenés {ult_qty.get(tk, 0):,.4f}" if tenidas else None)
+            else:
+                tk = g1.selectbox("Vendo", tenidas or ["(no tenés acciones)"])
+                cant = g2.number_input("Cantidad que vendo", min_value=0.0, step=1.0)
+                tk2 = st.text_input("Compro (ticker)", placeholder="Ej: TSLA")
+                st.caption("La compra se hace con lo que se obtiene de la venta, a los precios de cierre del día. "
+                           "Después de agregarlo, la tenencia actual ya aparece cambiada.")
+            enviar = st.form_submit_button("Agregar movimiento")
+        if enviar:
+            base = {"Fecha": fch, "Moneda": "USD"}
+            if tipo in ("Depositar dinero", "Retirar dinero"):
+                if monto > 0:
+                    fila = {**base, "Operación": "Depósito" if tipo.startswith("Dep") else "Retiro", "Monto": monto, "Moneda": mon}
+                else:
+                    falta = "Ingresá un monto mayor a 0."
+            elif tipo == "Comprar acciones":
+                if tk.strip() and cant > 0:
+                    fila = {**base, "Operación": "Compra", "Ticker": tk.strip().upper(), "Cantidad": cant}
+                else:
+                    falta = "Ingresá el ticker y una cantidad mayor a 0."
+            elif tipo == "Vender acciones":
+                if tk in tenidas and cant > 0:
+                    fila = {**base, "Operación": "Venta", "Ticker": tk, "Cantidad": cant}
+                else:
+                    falta = "Elegí una acción que tengas e ingresá una cantidad mayor a 0."
+            else:
+                if tk in tenidas and cant > 0 and tk2.strip():
+                    fila = {**base, "Operación": "Cambio", "Ticker": tk, "Cantidad": cant, "Ticker destino": tk2.strip().upper()}
+                else:
+                    falta = "Elegí la acción que vendés, la cantidad y el ticker de la que comprás."
+            if tipo in ("Vender acciones", "Cambiar una acción por otra") and fila and cant > ult_qty.get(tk, 0) + 1e-9:
+                st.warning(f"Estás vendiendo más de lo que tenés hoy de {tk} ({ult_qty.get(tk, 0):,.4f}). Se agrega igual; revisá la fecha.")
+            if falta:
+                st.error(falta)
+            elif fila:
+                nueva = pd.DataFrame([{c: fila.get(c) for c in COLS_OPS}])
+                st.session_state.cart_ops = pd.concat([ed, nueva], ignore_index=True)
+                st.session_state.cart_ver += 1
+                st.session_state.cart_msg = "Movimiento agregado. La tenencia actual ya lo incluye."
+                st.rerun()
 
-        def resumen(v, f):
-            r = retorno_diario(v, f)
-            fl = f[f != 0]
-            tir = xirr(list(fl.index), list(fl.values), v.iloc[-1], v.index[-1]) if len(fl) and (v.index[-1] - fl.index[0]).days >= 60 else np.nan
-            return r, {"Valor actual": v.iloc[-1], "Aportes netos (depósitos − retiros)": f.sum(),
-                       "Ganancia": v.iloc[-1] - f.sum(), "Rendimiento ajustado por aportes (TWR) %": ((1 + r).prod() - 1) * 100,
-                       "TIR anual del dinero %": tir * 100}
-
-        r_usd, m_usd = resumen(res["valor_usd"], res["flujo_usd"])
-        tabla_res = pd.DataFrame({"USD": m_usd})
-        r_ars = None
-        if "valor_ars" in res:
-            r_ars, m_ars = resumen(res["valor_ars"], res["flujo_ars"])
-            tabla_res["Pesos (ARS)"] = pd.Series(m_ars)
-        st.markdown(f"**Resumen del {res.index[0]:%d/%m/%Y} al {res.index[-1]:%d/%m/%Y}**")
-        st.dataframe(tabla_res.style.format(precision=2, na_rep="-"), width="stretch")
-        st.caption("**TWR** encadena el rendimiento de cada día quitando el efecto de los depósitos y retiros: es la medida para saber si "
-                   "elegiste bien las acciones. La **TIR del dinero** sí pesa cuándo pusiste cada monto (se calcula con 60 días o más). "
-                   "En pesos, el rendimiento incluye lo que subió o bajó el dólar MEP.")
-
-        opciones = ["USD"] + (["Pesos (ARS)"] if r_ars is not None else [])
-        mon = st.radio("Ver gráficos y detalle mensual en", opciones, horizontal=True, key="cart_mon")
-        if mon == "USD":
-            v, f, r = res["valor_usd"], res["flujo_usd"], r_usd
+    # ---- Resultados ----
+    with c_res:
+        if st.session_state.get("cart_msg"):
+            st.success(st.session_state.pop("cart_msg"))
+        if n_malas:
+            st.error(f"{n_malas} fila(s) incompletas del historial se ignoran: las compras, ventas y cambios necesitan ticker y cantidad; "
+                     "los depósitos y retiros, un monto.")
+        if error:
+            st.error(error)
+        elif res is None:
+            st.info("Cargá al menos un depósito y una compra para ver los resultados.")
         else:
-            v, f, r = res["valor_ars"], res["flujo_ars"], r_ars
-        st.line_chart(pd.DataFrame({"Valor de la cartera": v, "Aportes netos acumulados": f.cumsum()}))
-        st.line_chart(pd.DataFrame({"Rendimiento acumulado % (TWR)": ((1 + r).cumprod() - 1) * 100}))
-        mes = v.index.to_period("M").astype(str)
-        mensual = pd.DataFrame({"Rend. del mes % (TWR)": ((1 + r).groupby(mes).prod() - 1) * 100,
-                                "Aportes netos del mes": f.groupby(mes).sum(),
-                                "Valor al cierre": v.groupby(mes).last()})
-        mensual.index.name = "Mes"
-        st.markdown("**Mes a mes:** el rendimiento de cada mes no cambia aunque hayas depositado o retirado ese mes.")
-        st.dataframe(mensual.style.format(precision=2), width="stretch")
+            if (res["efectivo_usd"] < -0.01).any():
+                st.warning("En algún momento compraste más de lo que tenías en efectivo (efectivo negativo). Agregá un depósito antes de esa compra, "
+                           "o el rendimiento va a reflejar dinero que no pusiste.")
+            if (qty < -1e-9).any().any():
+                st.warning("Hay ventas por más acciones de las que tenías.")
 
-        ult, px_ult = qty.iloc[-1], close.reindex(res.index).iloc[-1]
-        ten = pd.DataFrame({"Cantidad": ult, "Precio USD": px_ult[ult.index], "Valor USD": ult * px_ult[ult.index]})
-        ten = ten[ten["Cantidad"].abs() > 1e-9]
-        ten.loc["Efectivo (USD)"] = [np.nan, np.nan, res["efectivo_usd"].iloc[-1]]
-        ten["% de la cartera"] = ten["Valor USD"] / ten["Valor USD"].sum() * 100
-        ten.index.name = "Activo"
-        st.markdown("**Tenencia actual**")
-        st.dataframe(ten.style.format(precision=2, na_rep="-"), width="stretch")
-        st.caption("Compras y ventas al precio de cierre del día (o del siguiente día de mercado). Precios de Yahoo Finance en dólares. "
-                   "No incluye comisiones, impuestos ni dividendos. La conversión a pesos usa el dólar MEP de cada fecha.")
+            st.markdown(f"### Tenencia actual (al {res.index[-1]:%d/%m/%Y})")
+            st.caption("Lo que tenés **hoy**, después de aplicar todos los movimientos del historial.")
+            px_ult = close.reindex(res.index).iloc[-1]
+            ten = pd.DataFrame({"Cantidad": ult_qty, "Precio USD": px_ult[ult_qty.index], "Valor USD": ult_qty * px_ult[ult_qty.index]})
+            ten = ten[ten["Cantidad"].abs() > 1e-9]
+            ten.loc["Efectivo (USD)"] = [np.nan, np.nan, res["efectivo_usd"].iloc[-1]]
+            ten["% de la cartera"] = ten["Valor USD"] / ten["Valor USD"].sum() * 100
+            ten.index.name = "Activo"
+            h1, h2 = st.columns([2, 3])
+            torta = ten[ten["Valor USD"] > 0.005].reset_index()
+            if not torta.empty:
+                torta["Etiqueta"] = torta["% de la cartera"].map(lambda x: f"{x:.1f}%")
+                arco = alt.Chart(torta).encode(
+                    theta=alt.Theta("Valor USD:Q", stack=True), color=alt.Color("Activo:N", legend=alt.Legend(title=None, orient="bottom")),
+                    tooltip=["Activo", alt.Tooltip("Valor USD:Q", format=",.2f"), "Etiqueta"])
+                grafico = (arco.mark_arc(innerRadius=35) + arco.mark_text(radius=82, size=12).encode(text="Etiqueta:N")).properties(height=280)
+                h1.altair_chart(grafico, width="stretch")
+            h2.dataframe(ten.style.format(precision=2, na_rep="-"), width="stretch")
 
+            def resumen(v, f):
+                r = retorno_diario(v, f)
+                fl = f[f != 0]
+                tir = xirr(list(fl.index), list(fl.values), v.iloc[-1], v.index[-1]) if len(fl) and (v.index[-1] - fl.index[0]).days >= 60 else np.nan
+                return r, {"Valor actual": v.iloc[-1], "Aportes netos (depósitos − retiros)": f.sum(), "Ganancia": v.iloc[-1] - f.sum(),
+                           "Rendimiento ajustado por aportes (TWR) %": ((1 + r).prod() - 1) * 100, "TIR anual del dinero %": tir * 100}
+
+            r_usd, m_usd = resumen(res["valor_usd"], res["flujo_usd"])
+            tabla_res = pd.DataFrame({"USD": m_usd})
+            r_ars = None
+            if "valor_ars" in res:
+                r_ars, m_ars = resumen(res["valor_ars"], res["flujo_ars"])
+                tabla_res["Pesos (ARS)"] = pd.Series(m_ars)
+            st.markdown(f"### Rendimiento del {res.index[0]:%d/%m/%Y} al {res.index[-1]:%d/%m/%Y}")
+            st.dataframe(tabla_res.style.format(precision=2, na_rep="-"), width="stretch")
+            st.caption("**TWR** encadena el rendimiento de cada día quitando el efecto de los depósitos y retiros: es la medida para saber si "
+                       "elegiste bien las acciones. La **TIR del dinero** sí pesa cuándo pusiste cada monto (se calcula con 60 días o más). "
+                       "En pesos, el rendimiento incluye lo que subió o bajó el dólar MEP.")
+
+            mon_v = st.radio("Ver gráficos y detalle mensual en", ["USD"] + (["Pesos (ARS)"] if r_ars is not None else []),
+                             horizontal=True, key="cart_mon")
+            v, f, r = (res["valor_usd"], res["flujo_usd"], r_usd) if mon_v == "USD" else (res["valor_ars"], res["flujo_ars"], r_ars)
+            gA, gB = st.columns(2)
+            gA.caption("Valor de la cartera y aportes acumulados")
+            gA.line_chart(pd.DataFrame({"Valor de la cartera": v, "Aportes netos acumulados": f.cumsum()}), height=220)
+            gB.caption("Rendimiento acumulado % (TWR)")
+            gB.line_chart(pd.DataFrame({"Rendimiento acumulado % (TWR)": ((1 + r).cumprod() - 1) * 100}), height=220)
+            mes = v.index.to_period("M").astype(str)
+            mensual = pd.DataFrame({"Rend. del mes % (TWR)": ((1 + r).groupby(mes).prod() - 1) * 100,
+                                    "Aportes netos del mes": f.groupby(mes).sum(), "Valor al cierre": v.groupby(mes).last()})
+            mensual.index.name = "Mes"
+            st.markdown("**Mes a mes:** el rendimiento de cada mes no cambia aunque hayas depositado o retirado ese mes.")
+            st.dataframe(mensual.style.format(precision=2), width="stretch")
+            st.caption("Compras, ventas y cambios al precio de cierre del día (o del siguiente día de mercado). Precios de Yahoo Finance en dólares. "
+                       "No incluye comisiones, impuestos ni dividendos. La conversión a pesos usa el dólar MEP de cada fecha.")
 
 st.divider()
 st.caption("Proyecto personal con fines informativos. No constituye asesoramiento financiero ni recomendación de inversión.")
