@@ -6,7 +6,7 @@ import html as _html
 import re
 from math import pi
 
-PALETA = ["#E2704A", "#8C6FB3", "#D6A64F", "#4E8B7A", "#CDC3B5", "#5B7DB1"]
+PALETA = ["#6A4FA0", "#D6A64F", "#5B7DB1", "#CDC3B5", "#C98A5E", "#4E8B7A"]
 FUENTE_URL = "https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap"
 VERDE, ROJO, GRIS = "#2E7D5B", "#B84A4A", "#8A8F98"
 
@@ -44,20 +44,27 @@ header[data-testid="stHeader"]{background:transparent}
 .block-container{max-width:1300px;padding-top:2.4rem;padding-bottom:4rem}
 h1,h2,h3{letter-spacing:-0.02em;font-weight:500}
 /* pestañas */
-.stTabs [data-baseweb="tab-list"]{gap:4px;background:#EFEAE2;padding:6px;border-radius:18px;width:fit-content;max-width:100%;overflow-x:auto}
-.stTabs [data-baseweb="tab"]{border-radius:13px;padding:9px 18px;height:auto;font-weight:500;color:var(--suave)}
-.stTabs [aria-selected="true"]{background:var(--dark);color:#fff !important;box-shadow:0 4px 14px rgba(42,36,32,.25)}
-.stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none}
+[data-baseweb="tab-list"]{gap:4px !important;background:#EFEAE2;padding:6px !important;border-radius:18px;width:fit-content;max-width:100%;overflow-x:auto}
+[data-baseweb="tab"]{border-radius:13px !important;padding:9px 18px !important;height:auto !important;font-weight:500;color:var(--suave)}
+[data-baseweb="tab"][aria-selected="true"]{background:var(--dark) !important;box-shadow:0 4px 14px rgba(42,36,32,.25)}
+[data-baseweb="tab"][aria-selected="true"],[data-baseweb="tab"][aria-selected="true"] *{color:#fff !important}
+[data-baseweb="tab-highlight"],[data-baseweb="tab-border"]{display:none !important}
 /* control segmentado */
-[data-testid="stButtonGroup"]{background:#EFEAE2;padding:6px;border-radius:18px;width:fit-content;gap:4px}
-[data-testid="stButtonGroup"] button{border:0;border-radius:13px;padding:10px 20px;background:transparent;color:var(--suave);font-weight:500}
-[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
-[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{background:var(--dark);color:#fff;box-shadow:0 4px 14px rgba(42,36,32,.25)}
+[data-testid="stButtonGroup"]{background:#EFEAE2;padding:6px;border-radius:18px;width:fit-content;max-width:100%;gap:4px}
+[data-testid="stButtonGroup"] button{border:0 !important;border-radius:13px !important;padding:10px 20px;background:transparent !important;color:var(--suave);font-weight:500}
+[data-testid="stButtonGroup"] button[kind$="Active"],[data-testid="stButtonGroup"] button[data-testid$="Active"],
+[data-testid="stButtonGroup"] button[aria-checked="true"],[data-testid="stButtonGroup"] button[aria-pressed="true"]{background:var(--dark) !important;color:#fff !important;box-shadow:0 4px 14px rgba(42,36,32,.25)}
+[data-testid="stButtonGroup"] button[kind$="Active"] *,[data-testid="stButtonGroup"] button[data-testid$="Active"] *,
+[data-testid="stButtonGroup"] button[aria-checked="true"] *,[data-testid="stButtonGroup"] button[aria-pressed="true"] *{color:#fff !important}
 /* entradas */
-div[data-baseweb="input"],div[data-baseweb="select"]>div,div[data-baseweb="base-input"]{background:var(--card) !important;border:1px solid var(--borde) !important;border-radius:15px !important}
-.stTextInput input,.stNumberInput input,.stDateInput input{font-weight:500}
+[data-baseweb="input"],[data-baseweb="select"]>div,[data-baseweb="textarea"]{background-color:var(--card) !important;border:1px solid var(--borde) !important;border-radius:15px !important}
+[data-baseweb="input"] [data-baseweb="base-input"]{background:transparent !important;border:0 !important}
+[data-baseweb="input"] input,[data-baseweb="base-input"] input,[data-baseweb="textarea"] textarea{background:transparent !important;font-weight:500}
+[data-testid="stSlider"] [role="slider"]{background-color:#6A4FA0 !important;border-color:#6A4FA0 !important}
+[data-testid="stSliderThumbValue"]{color:#6A4FA0 !important}
+[data-testid="stForm"]{background:var(--card);border:1px solid var(--borde) !important;border-radius:26px;padding:26px 28px;box-shadow:0 10px 30px rgba(60,40,20,.07)}
 .stButton>button,.stDownloadButton>button,[data-testid="stPopover"]>button{border-radius:14px;border:1px solid var(--borde);background:var(--card);font-weight:500;padding:.55rem 1.1rem}
-.stButton>button[kind="primary"],.stFormSubmitButton>button{background:var(--dark);color:#fff;border-color:var(--dark)}
+.stFormSubmitButton>button,.stButton>button[kind="primary"]{background:var(--dark) !important;color:#fff !important;border-color:var(--dark) !important}
 [data-testid="stExpander"]{background:var(--card);border:1px solid var(--borde);border-radius:24px;overflow:hidden;margin-bottom:14px}
 [data-testid="stExpander"] summary{padding:18px 24px;background:linear-gradient(90deg,#EEF0FA,#F7F4EE);font-size:1.15rem;font-weight:600}
 [data-testid="stExpander"] details>div{padding:0}
@@ -89,7 +96,7 @@ div[data-baseweb="input"],div[data-baseweb="select"]>div,div[data-baseweb="base-
 .kpi .v{white-space:nowrap;font-size:2rem;font-weight:500;letter-spacing:-0.03em}
 .chip{display:inline-block;white-space:nowrap;padding:4px 11px;border-radius:10px;font-size:.78rem;font-weight:600}
 .ch-up{background:var(--verde-bg);color:var(--verde)}.ch-down{background:var(--rojo-bg);color:var(--rojo)}.ch-flat{background:var(--neu-bg);color:var(--neu)}
-.ch-warn{background:#FBEBD0;color:#9A6A12}.ch-yel{background:#FFF3C9;color:#8A6D00}.ch-org{background:#FFE3C2;color:#A85A00}
+.ch-pur{background:#ECE6F6;color:#5A3F94}.ch-sand{background:#EFE8DC;color:#6B5B45}.ch-warn{background:#FBEBD0;color:#9A6A12}.ch-yel{background:#FFF3C9;color:#8A6D00}.ch-org{background:#FFE3C2;color:#A85A00}
 /* tablas */
 .panel{background:var(--card);border:1px solid var(--borde);border-radius:26px;overflow:hidden;box-shadow:0 6px 24px rgba(60,40,20,.04)}
 .panel-top{display:flex;justify-content:space-between;align-items:center;padding:12px 24px 4px}
@@ -97,9 +104,9 @@ div[data-baseweb="input"],div[data-baseweb="select"]>div,div[data-baseweb="base-
 .tbl th{font-size:.7rem;letter-spacing:.13em;text-transform:uppercase;color:#4B5568;text-align:left;padding:16px 18px;background:#F4F5F9;font-weight:600;white-space:nowrap}
 .tbl td{white-space:nowrap;padding:15px 18px;border-top:1px solid #EFEAE1;vertical-align:middle;font-size:.98rem}
 .tbl tr:hover td{background:#FAF8F3}
-.tbl td.r,.tbl th.r{text-align:right}
-.tbl tr.sel td{background:#FBE6DF}.tbl tr.sel td:first-child{box-shadow:inset 4px 0 0 var(--terra)}
-.nm{display:flex;gap:14px;align-items:center}
+.tbl td.r,.tbl th.r{text-align:right}.tbl td.w{white-space:normal;min-width:260px;color:var(--suave);font-size:.92rem}
+.tbl tr.sel td{background:#F1ECFA}.tbl tr.sel td:first-child{box-shadow:inset 4px 0 0 #6A4FA0}
+.nm{display:flex;gap:14px;align-items:center;padding-right:14px}
 .nm b{display:block;font-size:1.02rem;font-weight:600}.nm span{color:var(--suave);font-size:.84rem}
 .av{width:44px;height:44px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.95rem;flex:none;background:#ECEEF8;color:#44508A;border:1px solid #DFE2F2}
 .av.c{color:#fff;border:0}
@@ -117,8 +124,8 @@ div[data-baseweb="input"],div[data-baseweb="select"]>div,div[data-baseweb="base-
 /* banner / detalle */
 .hint{display:flex;align-items:center;gap:14px;padding:16px 20px;border-radius:20px;background:linear-gradient(90deg,#F1ECFA,#FBF7F0);border:1px solid #E6DDF3;margin:14px 0 22px}
 .hint .ic{width:42px;height:42px;border-radius:13px;background:#8C6FB3;color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex:none}
-.detail{background:linear-gradient(180deg,#FCEBE5 0%,#FFFEFA 38%);border:1px solid var(--borde);border-radius:28px;padding:24px;box-shadow:0 6px 24px rgba(60,40,20,.05)}
-.detail .eyebrow{color:#B0432A;font-weight:600}
+.detail{background:linear-gradient(180deg,#F1ECFA 0%,#FFFEFA 38%);border:1px solid var(--borde);border-radius:28px;padding:24px;box-shadow:0 6px 24px rgba(60,40,20,.05)}
+.detail .eyebrow{color:#6A4FA0;font-weight:600}
 .mini-row{display:flex;gap:12px;margin:18px 0}
 .mini{flex:1;border:1px solid var(--borde);border-radius:18px;padding:13px 15px;background:#fff}
 .mini small{color:var(--suave);font-size:.78rem}.mini div{font-size:1.25rem;font-weight:500;margin-top:5px}
@@ -126,10 +133,10 @@ div[data-baseweb="input"],div[data-baseweb="select"]>div,div[data-baseweb="base-
 .lg{display:flex;gap:16px;font-size:.78rem;color:var(--suave);margin-top:6px}
 .lg i{flex:none;display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
 /* composición */
-.comp{display:flex;gap:30px;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--borde);border-radius:30px;padding:34px 38px;box-shadow:0 6px 24px rgba(60,40,20,.04)}
-.comp .izq{flex:1;min-width:0}
+.comp{display:flex;flex-wrap:wrap;gap:30px;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--borde);border-radius:30px;padding:34px 38px;box-shadow:0 6px 24px rgba(60,40,20,.04)}
+.comp .izq{flex:1 1 440px;min-width:0}.comp .dona{flex:none;margin:0 auto}
 .leg{display:flex;flex-wrap:wrap;gap:0 34px;margin-top:22px}
-.leg-i{display:flex;justify-content:space-between;align-items:center;width:300px;max-width:100%;padding:11px 0;border-bottom:1px solid #EFEAE1;font-size:.97rem}
+.leg-i{display:flex;justify-content:space-between;align-items:center;width:calc(50% - 17px);min-width:230px;padding:11px 0;border-bottom:1px solid #EFEAE1;font-size:.97rem}
 .leg-i span{display:flex;align-items:center;gap:11px}.leg-i i{width:11px;height:11px;border-radius:50%;display:inline-block;flex:none}
 .leg-i b{font-weight:700}
 /* tasas */
@@ -141,20 +148,20 @@ div[data-baseweb="input"],div[data-baseweb="select"]>div,div[data-baseweb="base-
 .bars{display:flex;align-items:flex-end;gap:14px;height:210px;margin-top:22px;border-bottom:1px solid #E7E0D5}
 .bc{flex:1;text-align:center;display:flex;flex-direction:column;justify-content:flex-end;height:100%}
 .bc .b{border-radius:12px 12px 0 0;background:#D3C9BC}
-.bc.best .b{background:linear-gradient(180deg,#E2704A,#F2A485);box-shadow:0 8px 18px rgba(226,112,74,.35)}
+.bc.unif .b{background:linear-gradient(180deg,#6A4FA0,#BBA9DC)}.bc.best .b{background:linear-gradient(180deg,#6A4FA0,#BBA9DC);box-shadow:0 8px 18px rgba(106,79,160,.35)}
 .bc .t{font-size:.72rem;color:#8A7A6C;margin-bottom:5px;min-height:15px}
-.bl{display:flex;gap:14px;margin-top:9px}.bl div{flex:1;text-align:center;font-size:.72rem;color:#8A7A6C}.bl .best{color:#B0432A;font-weight:700}
+.bl{display:flex;gap:14px;margin-top:9px}.bl div{flex:1;text-align:center;font-size:.72rem;color:#8A7A6C}.bl .best{color:#6A4FA0;font-weight:700}
 /* cartera */
 .strip{display:flex;background:var(--card);border:1px solid var(--borde);border-radius:24px;overflow:hidden;margin:16px 0}
 .cell{flex:1;padding:18px 22px;border-right:1px solid #EFEAE1}.cell:last-child{border-right:0}
 .cell small{color:var(--suave);font-size:.8rem;display:block}.cell .v{white-space:nowrap;font-size:1.7rem;font-weight:500;letter-spacing:-0.02em;margin:3px 0}
-.cell.hl{background:#FBE6DF}.cell.hl .v{color:#B0432A}
+.cell.hl{background:#F1ECFA}.cell.hl .v{color:#5A3F94}
 .mm{display:flex;gap:6px;align-items:flex-end;margin-top:14px}
 .mm .col{flex:1;text-align:center;border-bottom:1px solid #E7E0D5;padding-bottom:10px}
 .mm .col small{display:block;color:var(--suave);font-size:.78rem}.mm .col .p{font-size:.88rem;font-weight:600;margin:5px 0 14px}
 .mm .col .area{height:130px;display:flex;align-items:flex-end;justify-content:center}
 .mm .col .bb{width:42px;border-radius:9px 9px 0 0;background:linear-gradient(180deg,#5E9E8B,#A8D0C4)}
-.mm .col .bb.n{background:linear-gradient(180deg,#E2704A,#F2B49C)}
+.mm .col .bb.n{background:linear-gradient(180deg,#C45555,#E5A9A5)}
 .mm .col .vv{font-size:.74rem;color:var(--suave);margin-top:8px}
 @media (max-width:900px){.kpis{flex-wrap:wrap}.kpi{flex:1 1 45%}.hero h1{font-size:2.3rem}.comp{flex-direction:column}.hero{flex-direction:column;align-items:flex-start}.strip{flex-wrap:wrap}.cell{flex:1 1 45%}}
 """
@@ -219,10 +226,10 @@ def rsi_pill(v, lo=30, hi=70):
 
 def tabla(headers, filas, sel=None):
     """headers: lista de (texto, 'l'|'r'). filas: lista de listas de HTML de celda."""
-    th = "".join(f'<th class="{"r" if a == "r" else ""}">{esc(t)}</th>' for t, a in headers)
+    th = "".join(f'<th class="{a if a in ("r", "w") else ""}">{esc(t)}</th>' for t, a in headers)
     trs = ""
     for i, f in enumerate(filas):
-        tds = "".join(f'<td class="{"r" if headers[j][1] == "r" else ""}">{c}</td>' for j, c in enumerate(f))
+        tds = "".join(f'<td class="{headers[j][1] if headers[j][1] in ("r", "w") else ""}">{c}</td>' for j, c in enumerate(f))
         trs += f'<tr class="{"sel" if sel == i else ""}">{tds}</tr>'
     return compactar(f'<div class="panel" style="overflow-x:auto"><table class="tbl"><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table></div>')
 
@@ -244,7 +251,7 @@ def hint(texto_html, icono="✦"):
     return compactar(f'<div class="hint"><div class="ic">{icono}</div><div>{texto_html}</div></div>')
 
 
-def area_svg(a, b=None, uid="a", w=380, h=150, c1="#E2704A", c2="#8C6FB3"):
+def area_svg(a, b=None, uid="a", w=380, h=150, c1="#6A4FA0", c2="#B3A58F"):
     """Área con la serie principal y una línea punteada de referencia."""
     a = [float(x) for x in a]
     todas = a + ([float(x) for x in b] if b else [])
@@ -275,8 +282,8 @@ def detalle_fondo(nombre, sub, color, rescate, minimo, rend_txt, rend_pos, svg, 
     graf = ""
     if svg:
         graf = (f'<div class="row-sp" style="margin-top:6px"><span class="muted">Rendimiento acumulado</span><b class="{cls}">{esc(rend_txt)}</b></div>'
-                f'<div style="margin-top:10px">{svg}</div><div class="lg"><span><i style="background:#E2704A"></i>{esc(leyenda[0])}</span>'
-                f'<span><i style="background:#8C6FB3"></i>{esc(leyenda[1])}</span></div>')
+                f'<div style="margin-top:10px">{svg}</div><div class="lg"><span><i style="background:#6A4FA0"></i>{esc(leyenda[0])}</span>'
+                f'<span><i style="background:#B3A58F"></i>{esc(leyenda[1])}</span></div>')
     return compactar(f'<div class="detail"><div class="row-sp"><span class="eyebrow">Seleccionado</span></div>'
                      f'<div class="nm" style="margin-top:16px">{avatar(nombre[:1].upper(), color)}<div><b style="font-size:1.25rem;font-weight:500">{esc(nombre)}</b><span>{esc(sub)}</span></div></div>'
                      f'<div class="mini-row"><div class="mini"><small>⏱ Rescate</small><div>{esc(rescate)}</div></div>'
@@ -310,22 +317,22 @@ def composicion(titulo, descripcion, items, eyebrow="Composición de cartera", c
     leg = "".join(f'<div class="leg-i"><span><i style="background:{colores[i]}"></i>{esc(e)}</span><b>{num(p, 0)}%</b></div>'
                   for i, (e, p) in enumerate(items))
     return compactar(f'<div class="comp"><div class="izq"><div class="eyebrow m">{esc(eyebrow)}</div><div class="h2">{esc(titulo)}</div>'
-                     f'<div class="sub">{esc(descripcion)}</div><div class="leg">{leg}</div></div><div>{dona}</div></div>')
+                     f'<div class="sub">{esc(descripcion)}</div><div class="leg">{leg}</div></div><div class="dona">{dona}</div></div>')
 
 
 def tarjeta_oscura(etiqueta, valor, sub):
     return compactar(f'<div class="dark"><small>{esc(etiqueta)}</small><div class="v">{esc(valor)}</div><div class="s">{esc(sub)}</div></div>')
 
 
-def barras(items, mejor, alto=190):
-    """items: lista de (etiqueta, valor, texto_sobre_barra). El mejor se resalta. Eje desde cero."""
+def barras(items, mejor=None, alto=190):
+    """items: lista de (etiqueta, valor, texto_sobre_barra). Eje desde cero. Si mejor es None, todas las barras se ven igual."""
     mx = max(v for _, v, _ in items) or 1
     cols, labs = "", ""
     for i, (et, v, t) in enumerate(items):
         h = max(4, v / mx * alto)
-        cls = "best" if i == mejor else ""
-        cols += f'<div class="bc {cls}"><div class="t">{esc(t) if i == mejor else ""}</div><div class="b" style="height:{h:.0f}px"></div></div>'
-        labs += f'<div class="{cls}">{esc(et)}</div>'
+        cls = "unif" if mejor is None else ("best" if i == mejor else "")
+        cols += f'<div class="bc {cls}"><div class="t">{esc(t) if (mejor is None or i == mejor) else ""}</div><div class="b" style="height:{h:.0f}px"></div></div>'
+        labs += f'<div class="{"best" if i == mejor else ""}">{esc(et)}</div>'
     return compactar(f'<div class="bars">{cols}</div><div class="bl">{labs}</div>')
 
 

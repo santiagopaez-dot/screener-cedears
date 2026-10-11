@@ -1,6 +1,9 @@
 [theme]
 base = "light"
-primaryColor = "#E2704A"
+primaryColor = "#6A4FA0"
 backgroundColor = "#F5F2EC"
-secondaryBackgroundColor = "#EFEAE2"
+secondaryBackgroundColor = "#FFFEFA"
 textColor = "#26221F"
+borderColor = "#EAE3D8"
+baseRadius = "large"
+showWidgetBorder = true

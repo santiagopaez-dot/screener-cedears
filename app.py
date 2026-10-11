@@ -14,9 +14,25 @@ from pathlib import Path
 from datetime import date, timedelta
 
 st.set_page_config(page_title="Panel de inversiones AR", layout="wide")
+def NT(x):
+    """Marca el contenido como 'no traducir': Chrome tomaba la página por inglés y traducía mal (ROE -> 'hueva')."""
+    return f'<div translate="no" class="notranslate">{x}</div>'
+
+
+def H(x, **k):
+    return st.html(NT(x), **k)
+
+
+def Hc(col, x):
+    return col.html(NT(x))
+
+
 st.html(E.css())
+st.html("<script>(function(){var d=document.documentElement;d.setAttribute('lang','es');d.setAttribute('translate','no');"
+        "if(!document.querySelector('meta[name=\"google\"]')){var m=document.createElement('meta');m.name='google';m.content='notranslate';"
+        "document.head.appendChild(m);}})();</script>", unsafe_allow_javascript=True)
 _ahora = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
-st.html(E.hero("Panel de inversiones", "CEDEARs, FCI y renta fija", "Información simple para tomar decisiones con más contexto.",
+H(E.hero("Panel de inversiones", "CEDEARs, FCI y renta fija", "Información simple para tomar decisiones con más contexto.",
                f"Hoy, {_ahora:%H:%M}"))
 
 # Lista de ejemplo: confirmá en BYMA / tu broker cuáles tienen CEDEAR vigente.
@@ -299,17 +315,17 @@ def detalle_completo(f):
     else:
         pc = comp["porcentaje"].astype(float)
         pc = pc * 100 if pc.sum() <= 1.5 else pc
-        st.html(E.composicion("¿Dónde está invertido tu dinero?", "Distribución de la cartera del fondo según lo informado a la CNV.",
+        H(E.composicion("¿Dónde está invertido tu dinero?", "Distribución de la cartera del fondo según lo informado a la CNV.",
                               list(zip(comp["nombre"].astype(str), pc)), centro_txt="instrumentos"))
     hon = {k: v for k, v in (f.get("honorarios") or {}).items() if v}
     if hon:
-        with st.expander("Honorarios y comisiones: cómo se cobran"):
-            filas = [{"Concepto": COMISIONES.get(k, (k, ""))[0], "Valor": f"{v:g}%", "Cómo se cobra": COMISIONES.get(k, (k, ""))[1]}
-                     for k, v in hon.items()]
-            st.dataframe(pd.DataFrame(filas), hide_index=True, width="stretch")
-            st.caption("Los honorarios anuales **ya están descontados** del rendimiento: no se cobran aparte ni hay que restarlos de nuevo. "
-                       "Se pagan siempre, haya ganancia o pérdida. Las comisiones de ingreso y rescate se pagan una vez, al entrar o salir. "
-                       "Valores tal como los informa la CNV; suelen ser topes del reglamento. Confirmalo en el reglamento de gestión.")
+        filas = [[f'<span class="strong">{E.esc(COMISIONES.get(k, (k, ""))[0])}</span>', E.chip(f"{v:g}%", "pur"),
+                  E.esc(COMISIONES.get(k, (k, ""))[1])] for k, v in hon.items()]
+        H('<div class="eyebrow m" style="margin-top:18px">Honorarios y comisiones</div><div class="h2" style="font-size:1.8rem">Cómo se cobran</div>'
+                + E.tabla([("Concepto", "l"), ("Valor", "l"), ("Cómo se cobra", "w")], filas))
+        st.caption("Los honorarios anuales **ya están descontados** del rendimiento: no se cobran aparte ni hay que restarlos de nuevo. "
+                   "Se pagan siempre, haya ganancia o pérdida. Las comisiones de ingreso y rescate se pagan una vez, al entrar o salir. "
+                   "Valores tal como los informa la CNV; suelen ser topes del reglamento. Confirmalo en el reglamento de gestión.")
     cal = f.get("calificaciones") or []
     if cal:
         st.caption("Calificaciones: " + " · ".join(f"{x.get('calificadora', '')}: {x.get('calificacion', '')}" for x in cal))
@@ -436,18 +452,18 @@ OBJ = ["Ver todo", "Guardar a corto plazo", "Ganarle a la inflación"]
 
 def hint_objetivo(corto, infl, pista=None):
     if corto:
-        st.html(E.hint("<b>Corto plazo:</b> fondos de mercado de dinero (30 días) y letras que vencen pronto. Las cauciones todavía no están "
+        H(E.hint("<b>Corto plazo:</b> fondos de mercado de dinero (30 días) y letras que vencen pronto. Las cauciones todavía no están "
                        "cargadas. Es un filtro informativo, no una recomendación: un fondo de mercado de dinero no garantiza rendimiento y una "
                        "letra solo devuelve lo prometido si la mantenés hasta el vencimiento."))
     elif infl:
-        st.html(E.hint("<b>Inflación:</b> muestra lo que rinde por encima de la inflación <b>esperada</b> (la del REM del BCRA, que podés cambiar). "
+        H(E.hint("<b>Inflación:</b> muestra lo que rinde por encima de la inflación <b>esperada</b> (la del REM del BCRA, que podés cambiar). "
                        "Los bonos CER (indexados) todavía no están cargados. Es un filtro informativo: lo que pasó no garantiza lo que va a pasar."))
     elif pista:
-        st.html(E.hint(pista))
+        H(E.hint(pista))
 
 
 def selector_objetivo(key, pista=None, con_hint=True):
-    st.html('<div class="eyebrow m" style="margin-bottom:6px">¿Qué querés lograr?</div>')
+    H('<div class="eyebrow m" style="margin-bottom:6px">¿Qué querés lograr?</div>')
     obj = st.segmented_control("¿Qué querés lograr?", OBJ, default=OBJ[0], key=key, label_visibility="collapsed") or OBJ[0]
     corto, infl = obj == OBJ[1], obj == OBJ[2]
     if con_hint:
@@ -606,7 +622,7 @@ def resumen_cartera(v, f):
                "Rendimiento ajustado por aportes (TWR) %": ((1 + r).prod() - 1) * 100, "TIR anual del dinero %": tir * 100}
 
 
-def area_alt(df, c1="#E2704A", c2="#8C6FB3", cero=False):
+def area_alt(df, c1="#6A4FA0", c2="#B3A58F", cero=False):
     d = df.copy()
     d.index.name = "Fecha"
     cols = list(d.columns)
@@ -624,6 +640,28 @@ def area_alt(df, c1="#E2704A", c2="#8C6FB3", cero=False):
 
 
 MESES_ES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+
+
+def historial_html(ed):
+    """Tabla de solo lectura con los últimos movimientos."""
+    d = ed.dropna(subset=["Fecha", "Operación"]).copy()
+    if d.empty:
+        return '<div class="sub">Todavía no cargaste movimientos.</div>'
+    d["_f"] = pd.to_datetime(d["Fecha"])
+    d = d.sort_values("_f", ascending=False)
+    txt = lambda x: "" if pd.isna(x) else str(x)
+    rows = []
+    for _, o in d.head(20).iterrows():
+        op = o["Operación"]
+        if op in ("Depósito", "Retiro"):
+            det, tipo = E.num(o["Monto"], 2, "US$ " if o["Moneda"] == "USD" else "$ "), "pur"
+        elif op == "Cambio":
+            det, tipo = f"{E.num(o['Cantidad'], 2)} {E.esc(txt(o['Ticker']))} → {E.esc(txt(o['Ticker destino']))}", "sand"
+        else:
+            det, tipo = f"{E.num(o['Cantidad'], 2)} {E.esc(txt(o['Ticker']))}", "sand"
+        rows.append([E.esc(o["_f"].strftime("%d/%m/%Y")), E.chip(op, tipo), f'<span class="strong">{det}</span>'])
+    pie = f'<div class="sub" style="font-size:.85rem;margin-top:8px">Mostrando los últimos {min(20, len(d))} de {len(d)} movimientos.</div>'
+    return E.tabla([("Fecha", "l"), ("Operación", "l"), ("Detalle", "l")], rows) + pie
 
 
 # ----------------------------------------------------------------------------
@@ -691,26 +729,40 @@ def metricas_flujos(precio, flujos, liq, reinv=0.04, n_cap=2, nom_cap="semestral
             "Próximo pago": str(fl[0][0]), "Vencimiento": str(fl[-1][0])}
 
 
-def tabla_bonos(filas, flujos_por_id, key, liq, aviso_vacio):
+def f_num(d, pref="", suf=""):
+    return lambda v: E.num(v, d, pref, suf)
+
+
+def f_strong(d, suf=""):
+    return lambda v: f'<span class="strong">{E.num(v, d, suf=suf)}</span>'
+
+
+def f_fecha(v):
+    return E.esc(pd.to_datetime(v).strftime("%d/%m/%Y"))
+
+
+def f_chip_real(v):
+    return E.chip(E.num(v, 2, suf="%", signo=True), "up" if v >= 0 else "down")
+
+
+def tabla_bonos(filas, flujos_por_id, key, liq, aviso_vacio, columnas):
+    """columnas: lista de (encabezado, clave, función de formato)."""
     if not filas:
         st.warning(aviso_vacio)
         return
     df = pd.DataFrame(filas).sort_values("Vencimiento").reset_index(drop=True)
-    st.info("**Para ver las fechas de pago de un instrumento:** marcá la casilla a la izquierda de su nombre. "
-            "Abajo aparece cuánto paga y cuándo, por cada 100 de valor nominal.")
-    ev = st.dataframe(df.style.format(precision=2, na_rep="-"), width="stretch",
-                      on_select="rerun", selection_mode="single-row", key=key)
-    sel = ev.selection.rows if ev is not None else []
-    if sel:
-        ident = df.loc[sel[0], "Instrumento"]
-        fl = [(f, m) for f, m in flujos_por_id[ident] if date.fromisoformat(f) > liq]
-        st.markdown(f"**Fechas de pago de {ident}**")
-        st.dataframe(pd.DataFrame({
-            "Fecha de pago": [f for f, _ in fl],
-            "Pago por 100 VN": [m for _, m in fl],
-            "Días desde la liquidación": [(date.fromisoformat(f) - liq).days for f, _ in fl],
-        }), hide_index=True, width="stretch")
-        st.caption("Para bonos que amortizan, cada pago mezcla cupón y devolución de capital.")
+    ident = st.selectbox("Ver las fechas de pago de", list(df["Instrumento"]), key=key + "_sel")
+    rows = []
+    for _, r in df.iterrows():
+        celdas = [E.activo(r["Instrumento"], r.get("Sub", ""), str(r["Instrumento"])[:2])]
+        celdas += [fmt(r[clave]) if clave in r.index else "-" for _, clave, fmt in columnas]
+        rows.append(celdas)
+    H(E.tabla([("Instrumento", "l")] + [(h, "l") for h, _, _ in columnas], rows, sel=list(df["Instrumento"]).index(ident)))
+    fl = [(f, m) for f, m in flujos_por_id[ident] if date.fromisoformat(f) > liq]
+    cron = [[f_fecha(f), E.num((date.fromisoformat(f) - liq).days, 0), f'<span class="strong">{E.num(m, 2)}</span>'] for f, m in fl]
+    H(f'<div class="eyebrow m" style="margin-top:22px">Fechas de pago</div><div class="h2" style="font-size:1.8rem">{E.esc(ident)}</div>'
+            + E.tabla([("Fecha de pago", "l"), ("Días desde la liquidación", "l"), ("Pago por 100 VN", "r")], cron))
+    st.caption("Para bonos que amortizan, cada pago mezcla cupón y devolución de capital.")
 
 
 # ----------------------------------------------------------------------------
@@ -729,18 +781,18 @@ def mover_panorama(d):
 
 
 h1, h2, h3, h4 = st.columns([10, 1.3, 0.8, 0.8], vertical_alignment="center")
-h1.html('<div style="font-size:1.4rem;font-weight:500;letter-spacing:-0.02em">Panorama de mercado</div>'
+Hc(h1, '<div style="font-size:1.4rem;font-weight:500;letter-spacing:-0.02em">Panorama de mercado</div>'
         '<div class="muted" style="font-size:.85rem">Datos informativos, no constituyen recomendación de inversión</div>')
-h2.html(f'<div class="muted" style="text-align:right">{st.session_state.pano_i + 1} / {max_i + 1}</div>')
+Hc(h2, f'<div class="muted" style="text-align:right">{st.session_state.pano_i + 1} / {max_i + 1}</div>')
 h3.button("‹", key="pano_prev", on_click=mover_panorama, args=(-1,), disabled=st.session_state.pano_i == 0)
 h4.button("›", key="pano_next", on_click=mover_panorama, args=(1,), disabled=st.session_state.pano_i >= max_i)
 if panel_mercado:
     vis = panel_mercado[st.session_state.pano_i:st.session_state.pano_i + VENTANA]
-    st.html(E.kpis([E.kpi_card(i["titulo"], i["sub"], i["valor"], i["delta"], i["tipo"], i["flecha"], i["serie"], i["ayuda"])
+    H(E.kpis([E.kpi_card(i["titulo"], i["sub"], i["valor"], i["delta"], i["tipo"], i["flecha"], i["serie"], i["ayuda"])
                     for i in vis]))
 else:
     st.caption("No se pudieron cargar los indicadores del mercado en este momento.")
-st.html('<div style="height:10px"></div>')
+H('<div style="height:10px"></div>')
 
 def chip_yield(v):
     if pd.isna(v) or v == 0:
@@ -798,7 +850,7 @@ except Exception:
 
 # --- 1. CEDEARs: trading ------------------------------------------------------
 with tab1:
-    st.html('<div class="eyebrow m">CEDEARs · Trading</div><div class="h2">RSI diario y de 45 minutos</div>')
+    H('<div class="eyebrow m">CEDEARs · Trading</div><div class="h2">RSI diario y de 45 minutos</div>')
     txt = f"Datos diarios al {close.index[-1].date()}"
     txt += (f" · intradiario hasta {ult_intra:%d/%m %H:%M} (hora de Nueva York)" if ult_intra is not None
             else " · RSI de 45 min no disponible ahora")
@@ -824,16 +876,16 @@ with tab1:
             filas = [[E.activo(r["Nombre"], tk, tk[:2]), f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>',
                       E.num(r["Volatilidad %"], 2, suf="%"), E.rsi_pill(r["RSI diario"], lo, hi), E.rsi_pill(r["RSI 45 min"], lo, hi)]
                      for tk, r in sub.iterrows()]
-            st.html(E.variacion_chip(sub["Var. diaria %"].mean())
+            H(E.variacion_chip(sub["Var. diaria %"].mean())
                     + E.tabla([("Activo", "l"), ("Precio USD", "l"), ("Volatilidad", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")], filas))
-    st.html(E.leyenda_rsi(lo, hi))
+    H(E.leyenda_rsi(lo, hi))
     st.caption("RSI 45 min: velas de 45 minutos armadas desde datos de 15 min (Yahoo, pueden tener demora); fuera del horario de NY muestra la última rueda. "
                "Volatilidad: desvío de retornos diarios de 60 ruedas, anualizado; descartar las de baja volatilidad evita activos que casi no se mueven. "
                "La barra de cada RSI muestra su valor de 0 a 100. Informativo, no es una recomendación de inversión.")
 
 # --- 2. CEDEARs: dividendos + cara o barata -----------------------------------
 with tab2:
-    st.html('<div class="eyebrow m">CEDEARs · Dividendos</div><div class="h2">Dividendos y valuación</div>')
+    H('<div class="eyebrow m">CEDEARs · Dividendos</div><div class="h2">Dividendos y valuación</div>')
     f = fundamentales(tuple(tabla.index))
     divs = dividendos_12m(tuple(tabla.index))
     val = tabla[["Nombre", "Sector", "Precio USD", "Volumen USD (M)"]].copy()
@@ -877,7 +929,7 @@ with tab2:
                       E.num(r["P/E vs sector"], 2, suf="x"), chip_roe(r["ROE %"]), chip_deuda(r["Deuda/EBITDA"]),
                       barra_rango(r["Posición rango 52 sem. %"]), chip_veredicto(r["Veredicto"])]
                      for tk, r in sub.iterrows()]
-            st.html(E.tabla([("Activo", "l"), ("Precio USD", "l"), ("Dividendo 12m", "l"), ("Yield 12m", "l"), ("P/E", "l"),
+            H(E.tabla([("Activo", "l"), ("Precio USD", "l"), ("Dividendo 12m", "l"), ("Yield 12m", "l"), ("P/E", "l"),
                              ("P/E vs sector", "l"), ("ROE", "l"), ("Deuda/EBITDA", "l"), ("Rango 52 sem.", "l"), ("¿Cara o barata?", "l")], filas))
     st.markdown(
         "**Yield:** gris no paga · rojo <1,5% · amarillo 1,5–3% · verde 3–6% · naranja ≥6% (revisar por qué es tan alto). "
@@ -892,7 +944,7 @@ with tab2:
 
 # --- 3. FCI -----------------------------------------------------------------
 with tab3:
-    st.html('<div class="eyebrow m">Fondos comunes de inversión</div><div class="h2">Ranking de FCI</div>')
+    H('<div class="eyebrow m">Fondos comunes de inversión</div><div class="h2">Ranking de FCI</div>')
     rem_val, rem_nota = rem_inflacion()
     favs = st.session_state.setdefault("fci_favs", set())
     cA, cB = st.columns([4, 1.3], vertical_alignment="bottom")
@@ -994,7 +1046,7 @@ with tab3:
                 extra = [("Equiv. TNA plazo fijo 30d", E.num(fila["eq_tna"], 1, suf="%"))]
                 if fila["usd"] == fila["usd"]:
                     extra.append((f"En USD (MEP), {dias} días", E.num(fila["usd"], 1, suf="%", signo=True)))
-                st.html(E.detalle_fondo(fila["base"], fila["sub"].strip(), E.color_de(fila["base"]), resc, minimo,
+                H(E.detalle_fondo(fila["base"], fila["sub"].strip(), E.color_de(fila["base"]), resc, minimo,
                                         E.num(fila["Rend. período %"], 1, suf="%", signo=True), fila["Rend. período %"] >= 0, svg,
                                         leyenda=("Este fondo", "Depósitos a 30 días" if tea_ref is not None else "Referencia"), extra=extra))
                 ver = st.toggle("Ver detalle completo", key="fci_ver")
@@ -1010,7 +1062,7 @@ with tab3:
                         E.chip(E.num(x["vs_ref"], 2, suf=" p.p.", signo=True), "up" if x["vs_ref"] > 0 else "down") if x["vs_ref"] == x["vs_ref"] else "-",
                         E.num(x["Patrimonio (M)"], 0, "$ ", " M"),
                     ])
-                st.html(f'<div class="panel-top" style="padding:6px 4px 14px"><div><div class="eyebrow m">Ranking actualizado</div>'
+                H(f'<div class="panel-top" style="padding:6px 4px 14px"><div><div class="eyebrow m">Ranking actualizado</div>'
                         f'<div class="h2" style="font-size:1.9rem;margin:2px 0 0">Fondos que mejor encajan</div></div>'
                         f'<span class="chip ch-flat" style="font-size:.85rem">{len(r)} resultados</span></div>'
                         + E.tabla([("Fondo", "l"), (f"Rend. {dias} días", "l"), ("TEA", "l"), ("Vs. inflación", "l"),
@@ -1045,38 +1097,34 @@ with tab4:
     real = [((1 + g / monto) / (1 + inflacion) - 1) * 100 if monto else 0 for g in gan]
 
     with c_hero:
-        st.html('<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap;margin-bottom:6px">'
-                '<div style="flex:1;min-width:280px"><div class="eyebrow m">✦ Proyectá tu inversión</div>'
-                '<div class="h2" style="font-size:3rem;max-width:620px">La capitalización hace la diferencia.</div>'
-                '<div class="sub" style="max-width:560px">Ajustá los valores y compará cuánto puede crecer tu dinero según la frecuencia con la que se '
-                'reinvierten los intereses.</div></div>'
-                + E.tarjeta_oscura("Mejor resultado estimado", E.num(filas[mejor][3], 0, "$ "),
-                                   f"{E.num(gan[mejor], 0, '+$ ')} con capitalización {filas[mejor][0].lower()}") + "</div>")
+        H('<div style="margin-bottom:6px"><div class="eyebrow m">✦ Proyectá tu inversión</div>'
+                '<div class="h2" style="font-size:3rem;max-width:680px">La capitalización hace la diferencia.</div>'
+                '<div class="sub" style="max-width:600px">Ajustá los valores y compará cuánto puede crecer tu dinero según la frecuencia con la que se '
+                'reinvierten los intereses.</div></div>')
 
     L, R = st.columns([1, 1.45], gap="large")
     with L:
-        barras = E.barras([(f[1], g, E.num(f[2], 1, suf="%")) for f, g in zip(filas, gan)], mejor)
-        st.html(f'<div class="panel" style="padding:24px"><div class="row-sp"><div><small class="muted">Capital final proyectado</small>'
-                f'<div class="h2" style="font-size:2rem;margin:2px 0 0">{E.num(filas[mejor][3], 0, "$ ")}</div></div>'
-                f'<span class="pillb">{plazo} días</span></div>{barras}'
+        barras = E.barras([(f[1], g, E.num(f[2], 1, suf="%")) for f, g in zip(filas, gan)], None)
+        H(f'<div class="panel" style="padding:24px"><div class="row-sp"><div><small class="muted">Ganancia por frecuencia de capitalización</small>'
+                f'<div class="sub" style="margin-top:4px;max-width:340px;font-size:.9rem">Con la misma tasa, cuánto ganás en {plazo} días según '
+                f'cuántas veces se reinvierten los intereses. Sobre cada barra, su TEA.</div></div><span class="pillb">{plazo} días</span></div>{barras}'
                 f'<div style="margin-top:16px;padding-top:12px;border-top:1px dashed #D9D0C3;font-size:.82rem" class="muted">'
-                f'Las barras muestran la ganancia por frecuencia; sobre la mejor, su TEA. Inflación acumulada estimada: '
-                f'<b style="color:#6A4FA0">{E.num(inflacion * 100, 1, suf="%")}</b></div></div>')
+                f'Inflación acumulada estimada: <b style="color:#6A4FA0">{E.num(inflacion * 100, 1, suf="%")}</b></div></div>')
     with R:
         rows = []
         for i, f in enumerate(filas):
-            nombre = f[0] + ('<span class="badge">MAYOR RETORNO</span>' if i == mejor else "")
+            nombre = f[0]
             rows.append([nombre, E.num(f[2], 2, suf="%"), f'<span class="strong">{E.num(f[3], 0, "$ ")}</span>',
                          f'<span class="pos strong">{E.num(gan[i], 0, "+$ ")}</span>',
                          E.chip(E.num(real[i], 2, suf="%", signo=True), "up" if real[i] >= 0 else "down")])
-        st.html('<div class="eyebrow m" style="margin:2px 0 8px">Comparativa completa</div>' + E.tabla(
-            [("Frecuencia", "l"), ("TEA", "l"), ("Capital final", "l"), ("Ganancia", "l"), ("Rend. real", "l")], rows, sel=mejor))
+        H('<div class="eyebrow m" style="margin:2px 0 8px">Comparativa completa</div>' + E.tabla(
+            [("Frecuencia", "l"), ("TEA", "l"), ("Capital final", "l"), ("Ganancia", "l"), ("Rend. real", "l")], rows))
     st.caption("TEA = (1 + TNA/m)^m − 1. Con 30% de TNA: mensual ≈ 34,5% de TEA, diaria ≈ 35,0%. Rend. real descuenta la inflación acumulada "
                "estimada. Con plazos que no son múltiplos exactos del período, es una aproximación.")
 
 # --- 5. Renta fija ----------------------------------------------------------
 with tab5:
-    st.subheader("Renta fija: deuda pública y privada")
+    H('<div class="eyebrow m">Deuda pública y privada</div><div class="h2">Renta fija</div>')
     modo_corto, modo_infl = selector_objetivo("obj_rf")
     if modo_infl:
         rem_val2, rem_nota2 = rem_inflacion()
@@ -1110,6 +1158,12 @@ with tab5:
             "Vacío si nunca lo recuperás con los pagos que quedan.  \n"
             "- **Días al vto.:** días desde la liquidación hasta el **último** pago del instrumento.  \n"
             "- En **letras** hay un solo pago, así que días para recuperar y días al vencimiento son lo mismo.")
+    columnas_bonos = [("Precio USD", "Precio USD", f_num(2, "US$ ")), ("TIR (TEA)", "TIR (TEA) %", f_strong(2, "%")),
+                      (f"TNA (cap. {nom_cap.lower()})", f"TNA (cap. {nom_cap.lower()}) %", f_num(2, suf="%")),
+                      ("TIR modificada", "TIR modificada %", f_num(2, suf="%")), ("Duración", "Duración (años)", f_num(2)),
+                      ("Dur. modificada", "Duración modificada", f_num(2)), ("Días p/ recuperar", "Días para recuperar", f_num(0)),
+                      ("Días al vto.", "Días al vto.", f_num(0)), ("Próximo pago", "Próximo pago", f_fecha),
+                      ("Vencimiento", "Vencimiento", f_fecha)]
     sub_l, sub_s, sub_o, sub_m = st.tabs(["Letras (pesos)", "Bonos soberanos (USD)", "ONs (USD)", "Calculadora manual"])
     try:
         crono = cargar_cronogramas()
@@ -1135,7 +1189,7 @@ with tab5:
                 if not p or dias <= 0:
                     continue
                 rend = l["pago_final"] / p - 1
-                filas.append({"Instrumento": l["ticker"], "Vencimiento": l["vencimiento"], "Días": dias, "Precio": p,
+                filas.append({"Instrumento": l["ticker"], "Sub": "Letra en pesos", "Vencimiento": l["vencimiento"], "Días": dias, "Precio": p,
                               "Pago final": l["pago_final"], "Rend. al vto. %": rend * 100,
                               "TNA %": rend * 365 / dias * 100, "TEA %": ((1 + rend) ** (365 / dias) - 1) * 100,
                               "TEM %": ((1 + rend) ** (30 / dias) - 1) * 100})
@@ -1147,7 +1201,11 @@ with tab5:
                 st.caption(f"Se compara la TEA de cada letra con una inflación esperada de {infl_rf:.1f}% anual. Las letras son a tasa fija: "
                            "si la inflación real termina por encima de ese número, el rendimiento real es menor.")
             tabla_bonos(filas, {f["Instrumento"]: [(f["Vencimiento"], f["Pago final"])] for f in filas},
-                        "rf_letras", liq, "No hay precios disponibles para las letras cargadas.")
+                        "rf_letras", liq, "No hay precios disponibles para las letras cargadas.",
+                        [("Vencimiento", "Vencimiento", f_fecha), ("Días", "Días", f_num(0)), ("Precio", "Precio", f_num(2)),
+                         ("Pago final", "Pago final", f_num(2)), ("Rend. al vto.", "Rend. al vto. %", f_num(2, suf="%")),
+                         ("TNA", "TNA %", f_num(2, suf="%")), ("TEA", "TEA %", f_strong(2, "%")), ("TEM", "TEM %", f_num(2, suf="%"))]
+                        + ([("TEA real vs infl.", "TEA real vs infl. esperada %", f_chip_real)] if modo_infl else []))
             st.caption(f"{len(filas)} de {len(crono['letras'])} letras con precio. Si falta una letra reciente, hay que agregarla "
                        "a cronogramas.json (ticker, vencimiento y pago final por 100).")
 
@@ -1157,9 +1215,9 @@ with tab5:
                 p = px.get(k + "D")
                 m = metricas_flujos(p, v["flujos"], liq, reinv, n_cap, nom_cap.lower()) if p else None
                 if m:
-                    filas.append({"Instrumento": k, "Ley": v["ley"], "Precio USD": p, **m})
+                    filas.append({"Instrumento": k, "Sub": f"Ley {v['ley']}", "Precio USD": p, **m})
                     flujos[k] = v["flujos"]
-            tabla_bonos(filas, flujos, "rf_sob", liq, "En el modo corto plazo no se muestran bonos: sus plazos son largos y su precio varía." if modo_corto else "No hay precios disponibles para los bonos soberanos.")
+            tabla_bonos(filas, flujos, "rf_sob", liq, "En el modo corto plazo no se muestran bonos: sus plazos son largos y su precio varía." if modo_corto else "No hay precios disponibles para los bonos soberanos.", columnas_bonos)
             if modo_infl:
                 st.caption("Estos bonos están en dólares y a tasa fija: no están indexados por CER.")
             st.caption("Precio en dólares MEP (símbolo terminado en D), por 100 de valor nominal original. "
@@ -1171,9 +1229,9 @@ with tab5:
                 p = px.get(v["precio_ticker"])
                 m = metricas_flujos(p, v["flujos"], liq, reinv, n_cap, nom_cap.lower()) if p else None
                 if m:
-                    filas.append({"Instrumento": k, "Emisor": v["nombre"], "Precio USD": p, **m})
+                    filas.append({"Instrumento": k, "Sub": v["nombre"], "Precio USD": p, **m})
                     flujos[k] = v["flujos"]
-            tabla_bonos(filas, flujos, "rf_ons", liq, "En el modo corto plazo no se muestran ONs: sus plazos son largos y su precio varía." if modo_corto else "No hay precios disponibles para las ONs cargadas.")
+            tabla_bonos(filas, flujos, "rf_ons", liq, "En el modo corto plazo no se muestran ONs: sus plazos son largos y su precio varía." if modo_corto else "No hay precios disponibles para las ONs cargadas.", columnas_bonos)
             if modo_infl:
                 st.caption("Estas ONs están en dólares y a tasa fija: no están indexadas por CER.")
             st.caption("Las ONs con poca operación pueden tener precios poco representativos: mirá el spread y el volumen "
@@ -1268,34 +1326,40 @@ with tab6:
 
     # ---- Historial (se dibuja al final de la página, pero se lee primero) ----
     with c_hist:
-        st.markdown("### Historial de movimientos")
-        st.caption("Es el **registro de todo lo que hiciste**, en orden. Podés corregir una fila, borrarla (seleccionala y apretá Supr) o "
-                   "agregar una a mano. La **tenencia actual** de arriba es el resultado de aplicar todos estos movimientos.")
-        up = st.file_uploader("Cargar un historial guardado (CSV)", type="csv", key="cart_up")
-        if up is not None and st.session_state.get("cart_up_name") != up.name:
-            try:
-                nuevo_df = pd.read_csv(up)
-                nuevo_df["Fecha"] = pd.to_datetime(nuevo_df["Fecha"]).dt.date
-                st.session_state.cart_ops = nuevo_df.reindex(columns=COLS_OPS)
-                st.session_state.cart_up_name = up.name
-                st.session_state.cart_ver += 1
-                st.rerun()
-            except Exception:
-                st.warning("No se pudo leer el CSV. Tiene que tener las columnas: " + ", ".join(COLS_OPS) + ".")
-        ed = st.data_editor(
-            st.session_state.cart_ops, num_rows="dynamic", width="stretch", key=f"cart_ed_{st.session_state.cart_ver}",
-            column_config={
-                "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
-                "Operación": st.column_config.SelectboxColumn("Operación", options=["Depósito", "Retiro", "Compra", "Venta", "Cambio"], required=True,
-                                                              help="Cambio: vende 'Ticker' y compra 'Ticker destino' con lo obtenido."),
-                "Ticker": st.column_config.TextColumn("Ticker", help="Compras, ventas y cambios (el que se vende)."),
-                "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.0, format="%.4f"),
-                "Monto": st.column_config.NumberColumn("Monto", min_value=0.0, help="Para depósitos y retiros."),
-                "Moneda": st.column_config.SelectboxColumn("Moneda del monto", options=["USD", "ARS"]),
-                "Ticker destino": st.column_config.TextColumn("Cambia por", help="Solo para 'Cambio': la acción que se compra."),
-            })
-        st.session_state.cart_ops = ed
-        st.download_button("Descargar historial (CSV)", ed.to_csv(index=False).encode("utf-8"), "historial_cartera.csv", "text/csv")
+        H('<div class="eyebrow m" style="margin-top:18px">Registro</div><div class="h2">Historial de movimientos</div>'
+                '<div class="sub" style="margin-bottom:12px">Todo lo que hiciste, en orden. La <b>tenencia actual</b> es el resultado de '
+                'aplicar todos estos movimientos.</div>')
+        t_hist = st.container()
+        with st.expander("Editar, borrar o cargar movimientos"):
+            st.caption("Podés corregir una fila, borrarla (seleccionala y apretá Supr) o agregar una a mano. También podés cargar un historial "
+                       "guardado en CSV.")
+            up = st.file_uploader("Cargar un historial guardado (CSV)", type="csv", key="cart_up")
+            if up is not None and st.session_state.get("cart_up_name") != up.name:
+                try:
+                    nuevo_df = pd.read_csv(up)
+                    nuevo_df["Fecha"] = pd.to_datetime(nuevo_df["Fecha"]).dt.date
+                    st.session_state.cart_ops = nuevo_df.reindex(columns=COLS_OPS)
+                    st.session_state.cart_up_name = up.name
+                    st.session_state.cart_ver += 1
+                    st.rerun()
+                except Exception:
+                    st.warning("No se pudo leer el CSV. Tiene que tener las columnas: " + ", ".join(COLS_OPS) + ".")
+            ed = st.data_editor(
+                st.session_state.cart_ops, num_rows="dynamic", width="stretch", key=f"cart_ed_{st.session_state.cart_ver}",
+                column_config={
+                    "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                    "Operación": st.column_config.SelectboxColumn("Operación", options=["Depósito", "Retiro", "Compra", "Venta", "Cambio"],
+                                                                  required=True, help="Cambio: vende 'Ticker' y compra 'Ticker destino' con lo obtenido."),
+                    "Ticker": st.column_config.TextColumn("Ticker", help="Compras, ventas y cambios (el que se vende)."),
+                    "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.0, format="%.4f"),
+                    "Monto": st.column_config.NumberColumn("Monto", min_value=0.0, help="Para depósitos y retiros."),
+                    "Moneda": st.column_config.SelectboxColumn("Moneda del monto", options=["USD", "ARS"]),
+                    "Ticker destino": st.column_config.TextColumn("Cambia por", help="Solo para 'Cambio': la acción que se compra."),
+                })
+            st.session_state.cart_ops = ed
+            st.download_button("Descargar historial (CSV)", ed.to_csv(index=False).encode("utf-8"), "historial_cartera.csv", "text/csv")
+        with t_hist:
+            H(historial_html(ed))
 
     # ---- Cálculo ----
     ops, n_malas = preparar_ops(ed)
@@ -1325,9 +1389,12 @@ with tab6:
 
     # ---- Formulario para registrar movimientos ----
     with c_form:
-        st.markdown("### Agregar un movimiento")
-        tipo = st.radio("¿Qué querés hacer?", ["Depositar dinero", "Retirar dinero", "Comprar acciones", "Vender acciones",
-                                               "Cambiar una acción por otra"], horizontal=True, key="cart_tipo")
+        H('<div class="eyebrow m">Mi cartera</div><div class="h2">Agregar un movimiento</div>'
+                '<div class="sub" style="margin-bottom:12px">Depositá o retirá dinero, comprá, vendé o cambiá una acción por otra. '
+                'La tenencia actual se actualiza al instante.</div>')
+        tipo = st.segmented_control("¿Qué querés hacer?", ["Depositar dinero", "Retirar dinero", "Comprar acciones", "Vender acciones",
+                                                           "Cambiar una acción por otra"], default="Depositar dinero",
+                                    key="cart_tipo", label_visibility="collapsed") or "Depositar dinero"
         fila, falta = None, None
         with st.form("cart_form", clear_on_submit=True):
             fch = st.date_input("Fecha", value=hoy, max_value=hoy, format="DD/MM/YYYY")
@@ -1409,7 +1476,7 @@ with tab6:
             ten["% de la cartera"] = ten["Valor USD"] / ten["Valor USD"].sum() * 100
             ten.index.name = "Activo"
             items = [(i, float(p)) for i, p in ten["% de la cartera"].items() if p > 0.05]
-            st.html(E.composicion("¿Qué tenés hoy?", f"Tenencia al {res.index[-1]:%d/%m/%Y}: el resultado de aplicar todos los movimientos del historial.",
+            H(E.composicion("¿Qué tenés hoy?", f"Tenencia al {res.index[-1]:%d/%m/%Y}: el resultado de aplicar todos los movimientos del historial.",
                                   items, eyebrow="Tenencia actual", centro_txt="posiciones"))
             with st.expander("Ver la tenencia en detalle"):
                 st.dataframe(ten.style.format(precision=2, na_rep="-"), width="stretch")
@@ -1425,9 +1492,9 @@ with tab6:
                            else (res["valor_ars"], res["flujo_ars"], r_ars, m_ars))
             sym = "US$ " if es_usd else "$ "
             gan = m_["Ganancia"]
-            hA.html(f'<div class="eyebrow m" style="margin-top:18px">Evolución · {res.index[0]:%d/%m/%Y} a {res.index[-1]:%d/%m/%Y}</div>'
+            Hc(hA, f'<div class="eyebrow m" style="margin-top:18px">Evolución · {res.index[0]:%d/%m/%Y} a {res.index[-1]:%d/%m/%Y}</div>'
                     f'<div class="h2">Tu estrategia {"ganó" if gan >= 0 else "perdió"} {E.num(abs(gan), 1, sym)}</div>')
-            st.html(E.strip([("Valor actual", E.num(m_["Valor actual"], 1, sym), f"Al {res.index[-1]:%d/%m/%Y}", False),
+            H(E.strip([("Valor actual", E.num(m_["Valor actual"], 1, sym), f"Al {res.index[-1]:%d/%m/%Y}", False),
                              ("Aportes netos", E.num(m_["Aportes netos (depósitos − retiros)"], 1, sym), "Depósitos menos retiros", False),
                              ("Ganancia", E.num(gan, 1, sym, signo=True), "Resultado acumulado", True),
                              ("Rendimiento TWR", E.num(m_["Rendimiento ajustado por aportes (TWR) %"], 2, suf="%", signo=True),
@@ -1440,7 +1507,7 @@ with tab6:
             gA, gB = st.columns(2, gap="large")
             with gA:
                 with st.container(key="card_valor"):
-                    st.html(f'<small class="muted">Valor de la cartera</small><div class="h2" style="font-size:1.9rem;margin:2px 0 4px">'
+                    H(f'<small class="muted">Valor de la cartera</small><div class="h2" style="font-size:1.9rem;margin:2px 0 4px">'
                             f'{E.num(m_["Valor actual"], 1, sym)}</div>')
                     d1 = pd.DataFrame({"Tu cartera": v})
                     if bval is not None:
@@ -1448,7 +1515,7 @@ with tab6:
                     st.altair_chart(area_alt(d1), width="stretch")
             with gB:
                 with st.container(key="card_twr"):
-                    st.html(f'<small class="muted">Rendimiento acumulado (TWR)</small><div class="h2" style="font-size:1.9rem;margin:2px 0 4px">'
+                    H(f'<small class="muted">Rendimiento acumulado (TWR)</small><div class="h2" style="font-size:1.9rem;margin:2px 0 4px">'
                             f'{E.num(tw.iloc[-1], 2, suf="%", signo=True)}</div>')
                     d2 = pd.DataFrame({"Tu cartera": tw})
                     if bacum is not None:
@@ -1458,7 +1525,7 @@ with tab6:
                 mes = v.index.to_period("M")
                 pct_m = ((1 + r).groupby(mes).prod() - 1) * 100
                 cierre_m = v.groupby(mes).last()
-                st.html('<div class="eyebrow m">Mes a mes</div><div class="h2" style="font-size:1.7rem">Rendimiento sin efecto de movimientos</div>'
+                H('<div class="eyebrow m">Mes a mes</div><div class="h2" style="font-size:1.7rem">Rendimiento sin efecto de movimientos</div>'
                         '<div class="sub" style="font-size:.85rem">El TWR permite comparar períodos de forma justa, aunque hayas depositado o retirado ese mes.</div>'
                         + E.meses([(MESES_ES[p.month - 1], float(pct_m[p]), E.num(cierre_m[p], 0, sym)) for p in pct_m.index]))
             with st.expander("Ver el resumen completo en dólares y pesos"):
