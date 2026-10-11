@@ -5,15 +5,19 @@ import numpy as np
 import re
 import json
 import altair as alt
+import estilo as E
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import unicodedata
 import requests
 from pathlib import Path
 from datetime import date, timedelta
 
 st.set_page_config(page_title="Panel de inversiones AR", layout="wide")
-st.title("📊 Panel de inversiones: CEDEARs, FCI y renta fija")
-st.caption("Versión resumida. Datos de Yahoo Finance (NY) y ArgentinaDatos. "
-           "Informativo, no es recomendación de inversión.")
+st.html(E.css())
+_ahora = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
+st.html(E.hero("Panel de inversiones", "CEDEARs, FCI y renta fija", "Información simple para tomar decisiones con más contexto.",
+               f"Hoy, {_ahora:%H:%M}"))
 
 # Lista de ejemplo: confirmá en BYMA / tu broker cuáles tienen CEDEAR vigente.
 # ticker: (nombre, sector)
@@ -276,105 +280,150 @@ def buscar_fondo(dic, nombre):
     return cand[0] if len(cand) == 1 else None
 
 
-def mostrar_detalle(f):
-    st.markdown(f"#### {f.get('nombre', 'Fondo')}")
-    st.caption(" · ".join(str(x) for x in [f.get("administradora"), f.get("tipoRenta"),
-                                           f.get("moneda"), f.get("region")] if x))
-    plazo, minimo = f.get("plazoLiquidacionDias"), f.get("inversionMinima")
-    c = st.columns(4)
-    c[0].metric("Rescate", "-" if plazo is None else ("Mismo día" if plazo == 0 else f"{plazo} día(s)"))
-    c[1].metric("Inversión mínima", "-" if minimo is None else f"{minimo:,.0f} {f.get('monedaInversion') or ''}".strip())
-    c[2].metric("Horizonte", f.get("horizonte") or "-")
-    c[3].metric("Duración", f.get("duracion") or "-")
+COMISIONES = {
+    "honorarioGerente": ("Honorario de la administradora", "% anual sobre el patrimonio del fondo; se descuenta día a día del valor de la cuotaparte"),
+    "honorarioDepositaria": ("Honorario de la depositaria (custodia)", "% anual sobre el patrimonio; se descuenta del valor de la cuotaparte"),
+    "gastosOrdinariosGestion": ("Gastos ordinarios de gestión", "% anual sobre el patrimonio; se descuenta del valor de la cuotaparte"),
+    "comisionIngreso": ("Comisión de ingreso", "% del monto que suscribís, se cobra al entrar"),
+    "comisionEgreso": ("Comisión de rescate (egreso)", "% del monto que rescatás, se cobra al salir"),
+    "comisionTransferencia": ("Comisión de transferencia", "Se cobra al transferir cuotapartes a otro agente"),
+    "comisionExito": ("Comisión de éxito", "% sobre el rendimiento que supera un objetivo, si el reglamento lo prevé"),
+    "otros": ("Otros", "Ver el reglamento de gestión del fondo"),
+}
 
+
+def detalle_completo(f):
     comp = pd.DataFrame(f.get("composicionCartera") or [])
     if comp.empty or "porcentaje" not in comp:
         st.info("El fondo no informa la composición de su cartera.")
     else:
-        comp = comp.sort_values("porcentaje", ascending=False).reset_index(drop=True)
-        if comp["porcentaje"].sum() <= 1.5:          # viene como fracción
-            comp["porcentaje"] = comp["porcentaje"] * 100
-        st.markdown("**En qué invierte** (según lo informado a la CNV)")
-        st.dataframe(
-            comp.rename(columns={"nombre": "Activo", "porcentaje": "Porcentaje"}),
-            width="stretch", hide_index=True,
-            column_config={"Porcentaje": st.column_config.ProgressColumn(
-                "Porcentaje", min_value=0, max_value=100, format="%.1f%%")},
-        )
-    COMISIONES = {
-        "honorarioGerente": ("Honorario de la administradora", "% anual sobre el patrimonio del fondo; se descuenta día a día del valor de la cuotaparte"),
-        "honorarioDepositaria": ("Honorario de la depositaria (custodia)", "% anual sobre el patrimonio; se descuenta del valor de la cuotaparte"),
-        "gastosOrdinariosGestion": ("Gastos ordinarios de gestión", "% anual sobre el patrimonio; se descuenta del valor de la cuotaparte"),
-        "comisionIngreso": ("Comisión de ingreso", "% del monto que suscribís, se cobra al entrar"),
-        "comisionEgreso": ("Comisión de rescate (egreso)", "% del monto que rescatás, se cobra al salir"),
-        "comisionTransferencia": ("Comisión de transferencia", "Se cobra al transferir cuotapartes a otro agente"),
-        "comisionExito": ("Comisión de éxito", "% sobre el rendimiento que supera un objetivo, si el reglamento lo prevé"),
-        "otros": ("Otros", "Ver el reglamento de gestión del fondo"),
-    }
+        pc = comp["porcentaje"].astype(float)
+        pc = pc * 100 if pc.sum() <= 1.5 else pc
+        st.html(E.composicion("¿Dónde está invertido tu dinero?", "Distribución de la cartera del fondo según lo informado a la CNV.",
+                              list(zip(comp["nombre"].astype(str), pc)), centro_txt="instrumentos"))
     hon = {k: v for k, v in (f.get("honorarios") or {}).items() if v}
     if hon:
         with st.expander("Honorarios y comisiones: cómo se cobran"):
-            filas = [{"Concepto": COMISIONES.get(k, (k, ""))[0], "Valor": f"{v:g}%",
-                      "Cómo se cobra": COMISIONES.get(k, (k, ""))[1]} for k, v in hon.items()]
+            filas = [{"Concepto": COMISIONES.get(k, (k, ""))[0], "Valor": f"{v:g}%", "Cómo se cobra": COMISIONES.get(k, (k, ""))[1]}
+                     for k, v in hon.items()]
             st.dataframe(pd.DataFrame(filas), hide_index=True, width="stretch")
-            st.caption("Los honorarios anuales **ya están descontados** del rendimiento que muestra la tabla: "
-                       "no se cobran aparte ni hay que restarlos de nuevo. Se pagan siempre, haya ganancia o pérdida. "
-                       "Las comisiones de ingreso y rescate, en cambio, se pagan una vez, al entrar o salir. "
-                       "Valores tal como los informa la CNV; suelen ser topes del reglamento y lo realmente cobrado "
-                       "puede ser menor. Confirmalo en el reglamento de gestión.")
+            st.caption("Los honorarios anuales **ya están descontados** del rendimiento: no se cobran aparte ni hay que restarlos de nuevo. "
+                       "Se pagan siempre, haya ganancia o pérdida. Las comisiones de ingreso y rescate se pagan una vez, al entrar o salir. "
+                       "Valores tal como los informa la CNV; suelen ser topes del reglamento. Confirmalo en el reglamento de gestión.")
     cal = f.get("calificaciones") or []
     if cal:
-        st.caption("Calificaciones: " + " · ".join(
-            f"{x.get('calificadora', '')}: {x.get('calificacion', '')}" for x in cal))
+        st.caption("Calificaciones: " + " · ".join(f"{x.get('calificadora', '')}: {x.get('calificacion', '')}" for x in cal))
+
+
+@st.cache_data(ttl=3600, show_spinner="Armando el gráfico del fondo...")
+def serie_fondo(tipo, nombre, ini, fin, n=10):
+    """Valor de la cuotaparte en n fechas entre ini y fin (para el gráfico del fondo)."""
+    fechas = pd.date_range(ini, fin, periods=n).normalize()
+    vals = []
+    for f in fechas:
+        df = fci_cercano(tipo, f.date())
+        fila = df[df["fondo"] == nombre] if len(df) else df
+        vals.append(float(fila["vcp"].iloc[0]) if len(fila) else np.nan)
+    return list(fechas), vals
+
+
+def alternar_fav(nombre):
+    favs = st.session_state.setdefault("fci_favs", set())
+    favs.symmetric_difference_update({nombre})
 
 
 # ----------------------------------------------------------------------------
 # Indicadores macro: tarjetas KPI, inflación y dólar MEP histórico
 # ----------------------------------------------------------------------------
+def _limpia_fecha(serie):
+    idx = pd.to_datetime(serie.index)
+    serie.index = (idx.tz_localize(None) if idx.tz is not None else idx).normalize()
+    return serie
+
+
 @st.cache_data(ttl=600, show_spinner=False)
-def kpis_macro():
-    out = {}
-    try:   # dólar MEP (casa "bolsa") y CCL: cotización actual de DolarApi
+def panorama_mercado():
+    """Lista de tarjetas (dict) para el carrusel: valor, variación y mini gráfico de ~30 puntos."""
+    items, live, hist = [], {}, {}
+    try:
         r = requests.get("https://dolarapi.com/v1/dolares", timeout=15)
         r.raise_for_status()
         for x in r.json():
             try:
                 if x.get("casa") in ("bolsa", "contadoconliqui"):
-                    out[x["casa"]] = float(x.get("venta") or x.get("compra"))
+                    live[x["casa"]] = float(x.get("venta") or x.get("compra"))
             except Exception:
                 continue
     except Exception:
         pass
-    try:   # riesgo país con variación diaria
-        r = requests.get(f"{API}/indices/riesgo-pais", timeout=20)
-        r.raise_for_status()
-        d = pd.DataFrame(r.json()).dropna()
+    for casa in ("bolsa", "contadoconliqui"):
+        try:
+            hist[casa] = _limpia_fecha(dolar_hist(casa).set_index("fecha")["valor"].copy())
+        except Exception:
+            pass
+
+    def pct(titulo, sub, valor, serie, fmt, ayuda=""):
+        s_ = [x for x in serie if x == x]
+        d = (s_[-1] / s_[-2] - 1) * 100 if len(s_) >= 2 and s_[-2] else None
+        tipo = "flat" if d is None or abs(d) < 0.005 else ("up" if d > 0 else "down")
+        items.append(dict(titulo=titulo, sub=sub, valor=fmt(valor), tipo=tipo, ayuda=ayuda, serie=s_[-30:],
+                          delta=E.num(abs(d), 2, suf="%") if d is not None else None,
+                          flecha="↑" if tipo == "up" else ("↓" if tipo == "down" else "")))
+
+    for casa, nombre, sub in (("bolsa", "Dólar MEP", "MEP"), ("contadoconliqui", "Dólar CCL", "CCL")):
+        h = hist.get(casa, pd.Series(dtype=float))
+        v = live.get(casa) or (float(h.iloc[-1]) if len(h) else None)
+        if v:
+            pct(nombre, sub, v, list(h.tail(30)), lambda x: E.num(x, 0, "$ "), "Cotización de venta.")
+    try:
+        rp = requests.get(f"{API}/indices/riesgo-pais", timeout=20)
+        rp.raise_for_status()
+        d = pd.DataFrame(rp.json()).dropna()
         d["fecha"] = pd.to_datetime(d["fecha"])
-        d = d.sort_values("fecha")
-        out["rp"] = (float(d["valor"].iloc[-1]), float(d["valor"].iloc[-1] - d["valor"].iloc[-2]))
+        v = list(d.sort_values("fecha")["valor"].astype(float).tail(30))
+        dif = v[-1] - v[-2]
+        items.append(dict(titulo="Riesgo país", sub="EMBI", valor=E.num(v[-1], 0, suf=" pb"), serie=v,
+                          delta=E.num(abs(dif), 0, suf=" pb"), tipo="flat" if dif == 0 else ("up" if dif < 0 else "down"),
+                          flecha="↓" if dif < 0 else ("↑" if dif > 0 else ""),
+                          ayuda="Sobretasa de los bonos argentinos sobre los del Tesoro de EE.UU. Si baja, el mercado ve menos riesgo (en verde)."))
     except Exception:
         pass
-    try:   # índices de EE.UU. y Merval
-        idx = yf.download(["^GSPC", "^IXIC", "^DJI", "^MERV"], period="5d", auto_adjust=True, progress=False)["Close"]
-        for sym in idx.columns:
-            h = idx[sym].dropna()
-            if len(h) >= 2:
-                out[sym] = (float(h.iloc[-1]), float((h.iloc[-1] / h.iloc[-2] - 1) * 100))
-        if "^MERV" in out and "contadoconliqui" in out:
-            out["merv_usd"] = out["^MERV"][0] / out["contadoconliqui"]   # Merval en dólares CCL
+    try:
+        idx = yf.download(["^GSPC", "^IXIC", "^DJI", "^MERV"], period="2mo", auto_adjust=True, progress=False)["Close"]
+        merv = _limpia_fecha(idx["^MERV"].dropna().copy()) if "^MERV" in idx else None
+        if merv is not None and len(merv) > 2:
+            if "contadoconliqui" in hist:
+                ccl = hist["contadoconliqui"]
+                m_usd = (pd.concat([merv.rename("m"), ccl.rename("c")], axis=1, sort=True).ffill().reindex(merv.index).dropna())
+                m_usd = m_usd["m"] / m_usd["c"]
+                pct("Merval en USD", "CCL", float(m_usd.iloc[-1]), list(m_usd.tail(30)), lambda x: E.num(x, 0, "US$ "),
+                    "Merval en pesos dividido el dólar CCL de cada día.")
+            elif "contadoconliqui" in live:
+                pct("Merval en USD", "CCL", float(merv.iloc[-1]) / live["contadoconliqui"], [], lambda x: E.num(x, 0, "US$ "),
+                    "Merval en pesos dividido el dólar CCL de hoy.")
+        for sym, nombre, sub in (("^GSPC", "S&P 500", "EE.UU."), ("^IXIC", "Nasdaq", "EE.UU."), ("^DJI", "Dow Jones", "EE.UU."),
+                                 ("^MERV", "Merval", "En pesos")):
+            if sym in idx:
+                h = idx[sym].dropna()
+                if len(h) >= 2:
+                    pct(nombre, sub, float(h.iloc[-1]), list(h.tail(30)), lambda x: E.num(x, 0))
     except Exception:
         pass
-    return out
+    return items
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
-def mep_hist():
-    r = requests.get("https://api.argentinadatos.com/v1/cotizaciones/dolares/bolsa", timeout=30)
+def dolar_hist(casa):
+    r = requests.get(f"https://api.argentinadatos.com/v1/cotizaciones/dolares/{casa}", timeout=30)
     r.raise_for_status()
     d = pd.DataFrame(r.json())
     col = "venta" if "venta" in d else "compra"
     d["fecha"] = pd.to_datetime(d["fecha"])
-    return d.sort_values("fecha")[["fecha", col]].rename(columns={col: "mep"}).dropna().reset_index(drop=True)
+    return d.sort_values("fecha")[["fecha", col]].rename(columns={col: "valor"}).dropna().reset_index(drop=True)
+
+
+def mep_hist():
+    return dolar_hist("bolsa").rename(columns={"valor": "mep"})
 
 
 def mep_en(d, fecha):
@@ -382,19 +431,27 @@ def mep_en(d, fecha):
     return float(sub["mep"].iloc[-1]) if len(sub) else np.nan
 
 
-OBJ = ["Ver todo", "Guardar plata a corto plazo", "Ganarle a la inflación"]
+OBJ = ["Ver todo", "Guardar a corto plazo", "Ganarle a la inflación"]
 
 
-def selector_objetivo(key):
-    obj = st.radio("¿Qué querés ver?", OBJ, horizontal=True, key=key)
-    corto, infl = obj == OBJ[1], obj == OBJ[2]
+def hint_objetivo(corto, infl, pista=None):
     if corto:
-        st.info("**Corto plazo:** muestra fondos de mercado de dinero (30 días) y letras que vencen pronto. Las cauciones todavía no están "
-                "cargadas. Es un filtro informativo, no una recomendación: un fondo de mercado de dinero no garantiza rendimiento y una letra "
-                "solo devuelve lo prometido si la mantenés hasta el vencimiento.")
+        st.html(E.hint("<b>Corto plazo:</b> fondos de mercado de dinero (30 días) y letras que vencen pronto. Las cauciones todavía no están "
+                       "cargadas. Es un filtro informativo, no una recomendación: un fondo de mercado de dinero no garantiza rendimiento y una "
+                       "letra solo devuelve lo prometido si la mantenés hasta el vencimiento."))
     elif infl:
-        st.info("**Inflación:** muestra lo que rinde por encima de la inflación **esperada** (la del REM del BCRA, que podés cambiar). "
-                "Los bonos CER (indexados) todavía no están cargados. Es un filtro informativo: lo que pasó no garantiza lo que va a pasar.")
+        st.html(E.hint("<b>Inflación:</b> muestra lo que rinde por encima de la inflación <b>esperada</b> (la del REM del BCRA, que podés cambiar). "
+                       "Los bonos CER (indexados) todavía no están cargados. Es un filtro informativo: lo que pasó no garantiza lo que va a pasar."))
+    elif pista:
+        st.html(E.hint(pista))
+
+
+def selector_objetivo(key, pista=None, con_hint=True):
+    st.html('<div class="eyebrow m" style="margin-bottom:6px">¿Qué querés lograr?</div>')
+    obj = st.segmented_control("¿Qué querés lograr?", OBJ, default=OBJ[0], key=key, label_visibility="collapsed") or OBJ[0]
+    corto, infl = obj == OBJ[1], obj == OBJ[2]
+    if con_hint:
+        hint_objetivo(corto, infl, pista)
     return corto, infl
 
 
@@ -525,6 +582,50 @@ def xirr(fechas, flujos, valor_final, fecha_final):
     return (lo + hi) / 2
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def precios_indice(inicio):
+    d = yf.download("^GSPC", start=inicio, auto_adjust=True, progress=False)["Close"].squeeze().dropna()
+    return _limpia_fecha(d.copy())
+
+
+def benchmark_sp(res, spx, usd=True):
+    """Qué habría pasado invirtiendo los mismos aportes y retiros en el S&P 500: (valor, rendimiento acumulado %)."""
+    px = spx.reindex(res.index.union(spx.index)).ffill().reindex(res.index).bfill()
+    flujo = res["flujo_usd"]
+    val = (flujo / px).cumsum() * px
+    if not usd and "mep" in res:
+        val, flujo = val * res["mep"], flujo * res["mep"]
+    return val, ((1 + retorno_diario(val, flujo)).cumprod() - 1) * 100
+
+
+def resumen_cartera(v, f):
+    r = retorno_diario(v, f)
+    fl = f[f != 0]
+    tir = xirr(list(fl.index), list(fl.values), v.iloc[-1], v.index[-1]) if len(fl) and (v.index[-1] - fl.index[0]).days >= 60 else np.nan
+    return r, {"Valor actual": v.iloc[-1], "Aportes netos (depósitos − retiros)": f.sum(), "Ganancia": v.iloc[-1] - f.sum(),
+               "Rendimiento ajustado por aportes (TWR) %": ((1 + r).prod() - 1) * 100, "TIR anual del dinero %": tir * 100}
+
+
+def area_alt(df, c1="#E2704A", c2="#8C6FB3", cero=False):
+    d = df.copy()
+    d.index.name = "Fecha"
+    cols = list(d.columns)
+    largo = d.reset_index().melt("Fecha", var_name="Serie", value_name="Valor")
+    base = alt.Chart(largo).encode(
+        x=alt.X("Fecha:T", axis=alt.Axis(title=None, format="%b", grid=False, labelColor="#8A7A6C", tickCount=6)),
+        y=alt.Y("Valor:Q", axis=alt.Axis(title=None, gridColor="#EFEAE1", labelColor="#8A7A6C"), scale=alt.Scale(zero=cero)),
+        color=alt.Color("Serie:N", scale=alt.Scale(domain=cols, range=[c1, c2][:len(cols)]),
+                        legend=alt.Legend(orient="bottom", title=None, labelColor="#7C746B", symbolType="stroke")))
+    uno = base.transform_filter(alt.datum.Serie == cols[0])
+    out = uno.mark_area(opacity=0.14, line=False) + uno.mark_line(strokeWidth=2.6)
+    if len(cols) > 1:
+        out = out + base.transform_filter(alt.datum.Serie == cols[1]).mark_line(strokeWidth=2, strokeDash=[5, 5])
+    return out.properties(height=210).configure_view(strokeWidth=0)
+
+
+MESES_ES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+
+
 # ----------------------------------------------------------------------------
 # Renta fija: cronogramas (archivo del repo) y precios en vivo (data912)
 # ----------------------------------------------------------------------------
@@ -615,37 +716,64 @@ def tabla_bonos(filas, flujos_por_id, key, liq, aviso_vacio):
 # ----------------------------------------------------------------------------
 # Pestañas
 # ----------------------------------------------------------------------------
-k = kpis_macro()
+panel_mercado = panorama_mercado()
+VENTANA = 4
+if "pano_i" not in st.session_state:
+    st.session_state.pano_i = 0
+max_i = max(0, len(panel_mercado) - VENTANA)
+st.session_state.pano_i = min(st.session_state.pano_i, max_i)
 
 
-def tarjeta(col, titulo, clave, formato, delta_fmt=None, ayuda=None):
-    v = k.get(clave)
-    if v is None:
-        col.metric(titulo, "-")
-    elif isinstance(v, tuple):
-        col.metric(titulo, formato.format(v[0]), delta_fmt.format(v[1]) if delta_fmt else None, help=ayuda)
-    else:
-        col.metric(titulo, formato.format(v), help=ayuda)
+def mover_panorama(d):
+    st.session_state.pano_i = max(0, min(max_i, st.session_state.pano_i + d))
 
 
-f1 = st.columns(4)
-tarjeta(f1[0], "Dólar MEP", "bolsa", "$ {:,.0f}")
-tarjeta(f1[1], "Dólar CCL", "contadoconliqui", "$ {:,.0f}")
-if "rp" in k:
-    f1[2].metric("Riesgo país", f"{k['rp'][0]:,.0f} pb", f"{k['rp'][1]:+.0f} pb", delta_color="inverse",
-                 help="Variación respecto de la rueda anterior. Si sube, el mercado ve más riesgo (en rojo).")
+h1, h2, h3, h4 = st.columns([10, 1.3, 0.8, 0.8], vertical_alignment="center")
+h1.html('<div style="font-size:1.4rem;font-weight:500;letter-spacing:-0.02em">Panorama de mercado</div>'
+        '<div class="muted" style="font-size:.85rem">Datos informativos, no constituyen recomendación de inversión</div>')
+h2.html(f'<div class="muted" style="text-align:right">{st.session_state.pano_i + 1} / {max_i + 1}</div>')
+h3.button("‹", key="pano_prev", on_click=mover_panorama, args=(-1,), disabled=st.session_state.pano_i == 0)
+h4.button("›", key="pano_next", on_click=mover_panorama, args=(1,), disabled=st.session_state.pano_i >= max_i)
+if panel_mercado:
+    vis = panel_mercado[st.session_state.pano_i:st.session_state.pano_i + VENTANA]
+    st.html(E.kpis([E.kpi_card(i["titulo"], i["sub"], i["valor"], i["delta"], i["tipo"], i["flecha"], i["serie"], i["ayuda"])
+                    for i in vis]))
 else:
-    f1[2].metric("Riesgo país", "-")
-tarjeta(f1[3], "Merval en USD (CCL)", "merv_usd", "US$ {:,.0f}", ayuda="Merval en pesos dividido el dólar CCL de hoy.")
-f2 = st.columns(4)
-tarjeta(f2[0], "S&P 500", "^GSPC", "{:,.0f}", "{:+.2f}%")
-tarjeta(f2[1], "Nasdaq", "^IXIC", "{:,.0f}", "{:+.2f}%")
-tarjeta(f2[2], "Dow Jones", "^DJI", "{:,.0f}", "{:+.2f}%")
-tarjeta(f2[3], "Merval (en pesos)", "^MERV", "{:,.0f}", "{:+.2f}%")
+    st.caption("No se pudieron cargar los indicadores del mercado en este momento.")
+st.html('<div style="height:10px"></div>')
+
+def chip_yield(v):
+    if pd.isna(v) or v == 0:
+        return E.chip("No paga", "flat")
+    t = "org" if v >= 6 else ("up" if v >= 3 else ("yel" if v >= 1.5 else "down"))
+    return E.chip(E.num(v, 2, suf="%"), t)
+
+
+def chip_roe(v):
+    return "-" if pd.isna(v) else E.chip(E.num(v, 1, suf="%"), "up" if v >= 15 else ("yel" if v >= 8 else "down"))
+
+
+def chip_deuda(v):
+    return "-" if pd.isna(v) else E.chip(E.num(v, 1, suf="x"), "up" if v <= 2 else ("yel" if v <= 4 else "down"))
+
+
+def chip_veredicto(t):
+    if t.startswith("Barata"):
+        return E.chip(t, "up")
+    if t.startswith("Cara"):
+        return E.chip(t, "down")
+    return E.chip(t, "flat") if t == "En línea" else f'<span class="muted">{E.esc(t)}</span>'
+
+
+def barra_rango(p):
+    if pd.isna(p):
+        return "-"
+    return (f'<div style="display:flex;align-items:center;gap:9px"><div class="bar" style="width:84px;margin:0;background:#E7E0D5">'
+            f'<i style="width:{max(2, min(100, p)):.0f}%;background:#8C6FB3"></i></div><span>{p:.0f}%</span></div>')
+
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "📈 CEDEARs: Trading (RSI)", "💰 CEDEARs: Dividendos y ¿cara o barata?", "🏦 Ranking FCI",
-    "🧮 Simulador de tasas", "💵 Renta fija", "💼 Simulador de cartera",
+    "CEDEARs · Trading", "CEDEARs · Dividendos", "Fondos (FCI)", "Simulador de tasas", "Renta fija", "Mi cartera",
 ])
 
 close, vol = precios(tuple(TICKERS))
@@ -659,6 +787,7 @@ tabla = pd.DataFrame({
     "RSI diario": close.apply(rsi).iloc[-1].values,
 }, index=close.columns)
 tabla.index.name = "Ticker"
+tabla["Var. diaria %"] = ((close.iloc[-1] / close.iloc[-2] - 1) * 100).values
 
 try:
     r45, ult_intra = rsi_45m(tuple(tabla.index))
@@ -669,49 +798,42 @@ except Exception:
 
 # --- 1. CEDEARs: trading ------------------------------------------------------
 with tab1:
-    st.subheader("Trading: RSI diario y de 45 minutos")
-    txt = f"Datos diarios al **{close.index[-1].date()}**"
-    if ult_intra is not None:
-        txt += f" · intradiario hasta **{ult_intra:%d/%m %H:%M}** (hora de Nueva York)"
-    else:
-        txt += " · RSI de 45 min no disponible ahora"
-    st.write(txt)
+    st.html('<div class="eyebrow m">CEDEARs · Trading</div><div class="h2">RSI diario y de 45 minutos</div>')
+    txt = f"Datos diarios al {close.index[-1].date()}"
+    txt += (f" · intradiario hasta {ult_intra:%d/%m %H:%M} (hora de Nueva York)" if ult_intra is not None
+            else " · RSI de 45 min no disponible ahora")
+    st.caption(txt)
 
     lo, hi = RSI_BAJO, RSI_ALTO
-    c1, c2 = st.columns(2)
+    c1, c2 = st.columns([2, 3], vertical_alignment="bottom")
     vol_min = c1.slider("Volatilidad mínima % (descarta las que casi no se mueven)", 0, 100, 30, step=5)
-    filtro = c2.selectbox("Mostrar", ["Todas", "Solo sobreventa (RSI verde)", "Solo sobrecompra (RSI rojo)"])
+    filtro = c2.segmented_control("Mostrar", ["Todas", "Sobreventa", "Sobrecompra"], default="Todas", key="rsi_filtro") or "Todas"
 
     t = tabla[(tabla["Volatilidad %"] >= vol_min) & (tabla["Volumen USD (M)"] >= MIN_VOLUMEN_USD_M)]
-    if filtro.startswith("Solo sobreventa"):
+    if filtro == "Sobreventa":
         t = t[(t["RSI diario"] < lo) | (t["RSI 45 min"] < lo)]
-    elif filtro.startswith("Solo sobrecompra"):
+    elif filtro == "Sobrecompra":
         t = t[(t["RSI diario"] > hi) | (t["RSI 45 min"] > hi)]
 
-    cols_t = ["Nombre", "Precio USD", "Volatilidad %", "RSI diario", "RSI 45 min"]
-    cols_rsi = ["RSI diario", "RSI 45 min"]
     st.caption(f"{len(t)} de {len(tabla)} CEDEARs pasan los filtros, agrupados por sector.")
+    if t.empty:
+        st.info("Ningún CEDEAR pasa los filtros elegidos.")
     for sector in sorted(t["Sector"].unique()):
-        sub = t[t["Sector"] == sector].sort_values("Volatilidad %", ascending=False)[cols_t]
-        with st.expander(f"{sector} ({len(sub)})", expanded=True):
-            st.dataframe(
-                sub.style
-                .map(lambda v: color_rsi(v, lo, hi), subset=cols_rsi)
-                .format(precision=1, na_rep="-", subset=cols_rsi)
-                .format(precision=2, na_rep="-", subset=["Precio USD", "Volatilidad %"]),
-                width="stretch",
-            )
-    st.markdown(
-        "**RSI:** 🟢 verde = sobreventa (menor a 30) · 🔴 rojo = sobrecompra (mayor a 70).  \n"
-        "**RSI 45 min:** velas de 45 minutos armadas desde datos de 15 min (datos de Yahoo, pueden tener demora). "
-        "Sirve para operar en el día; fuera del horario de NY muestra la última rueda.  \n"
-        "**Volatilidad:** desvío de retornos diarios de 60 ruedas, anualizado. Descartar las de baja volatilidad evita "
-        "activos que casi no se mueven y dan pocas señales."
-    )
+        sub = t[t["Sector"] == sector].sort_values("Volatilidad %", ascending=False)
+        with st.expander(f"{sector} · {len(sub)} activos encontrados", expanded=True):
+            filas = [[E.activo(r["Nombre"], tk, tk[:2]), f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>',
+                      E.num(r["Volatilidad %"], 2, suf="%"), E.rsi_pill(r["RSI diario"], lo, hi), E.rsi_pill(r["RSI 45 min"], lo, hi)]
+                     for tk, r in sub.iterrows()]
+            st.html(E.variacion_chip(sub["Var. diaria %"].mean())
+                    + E.tabla([("Activo", "l"), ("Precio USD", "l"), ("Volatilidad", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")], filas))
+    st.html(E.leyenda_rsi(lo, hi))
+    st.caption("RSI 45 min: velas de 45 minutos armadas desde datos de 15 min (Yahoo, pueden tener demora); fuera del horario de NY muestra la última rueda. "
+               "Volatilidad: desvío de retornos diarios de 60 ruedas, anualizado; descartar las de baja volatilidad evita activos que casi no se mueven. "
+               "La barra de cada RSI muestra su valor de 0 a 100. Informativo, no es una recomendación de inversión.")
 
 # --- 2. CEDEARs: dividendos + cara o barata -----------------------------------
 with tab2:
-    st.subheader("Dividendos (largo plazo) y valuación")
+    st.html('<div class="eyebrow m">CEDEARs · Dividendos</div><div class="h2">Dividendos y valuación</div>')
     f = fundamentales(tuple(tabla.index))
     divs = dividendos_12m(tuple(tabla.index))
     val = tabla[["Nombre", "Sector", "Precio USD", "Volumen USD (M)"]].copy()
@@ -733,30 +855,30 @@ with tab2:
         if pd.isna(r["P/E vs sector"]):
             return "Sin comparables"
         if r["P/E vs sector"] < 0.8:
-            return "🟢 Barata vs sector"
+            return "Barata vs sector"
         if r["P/E vs sector"] > 1.2:
-            return "🔴 Cara vs sector"
-        return "⚪ En línea"
+            return "Cara vs sector"
+        return "En línea"
 
     val["Veredicto"] = val.apply(veredicto, axis=1)
 
-    solo_pagan = st.checkbox("Solo las que pagan dividendos", value=True)
+    solo_pagan = st.toggle("Solo las que pagan dividendos", value=True)
 
     v = val[val["Volumen USD (M)"] >= MIN_VOLUMEN_USD_M]
     if solo_pagan:
         v = v[v["Yield 12m %"] > 0]
 
-    cols_v = ["Nombre", "Precio USD", "Div. 12m USD", "Yield 12m %",
-              "P/E", "P/E vs sector", "ROE %", "Deuda/EBITDA", "Posición rango 52 sem. %", "Veredicto"]
     st.caption(f"{len(v)} de {len(val)} CEDEARs pasan los filtros, agrupados por sector.")
     for sector in sorted(v["Sector"].unique()):
-        sub = v[v["Sector"] == sector].sort_values("Yield 12m %", ascending=False)[cols_v]
-        with st.expander(f"{sector} ({len(sub)})", expanded=True):
-            st.dataframe(
-                sub.style.map(color_yield, subset=["Yield 12m %"]).map(color_roe, subset=["ROE %"])
-                .map(color_deuda, subset=["Deuda/EBITDA"]).format(precision=2, na_rep="-"),
-                width="stretch",
-            )
+        sub = v[v["Sector"] == sector].sort_values("Yield 12m %", ascending=False)
+        with st.expander(f"{sector} · {len(sub)} activos encontrados", expanded=True):
+            filas = [[E.activo(r["Nombre"], tk, tk[:2]), f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>',
+                      E.num(r["Div. 12m USD"], 2, "US$ "), chip_yield(r["Yield 12m %"]), E.num(r["P/E"], 1),
+                      E.num(r["P/E vs sector"], 2, suf="x"), chip_roe(r["ROE %"]), chip_deuda(r["Deuda/EBITDA"]),
+                      barra_rango(r["Posición rango 52 sem. %"]), chip_veredicto(r["Veredicto"])]
+                     for tk, r in sub.iterrows()]
+            st.html(E.tabla([("Activo", "l"), ("Precio USD", "l"), ("Dividendo 12m", "l"), ("Yield 12m", "l"), ("P/E", "l"),
+                             ("P/E vs sector", "l"), ("ROE", "l"), ("Deuda/EBITDA", "l"), ("Rango 52 sem.", "l"), ("¿Cara o barata?", "l")], filas))
     st.markdown(
         "**Yield:** gris no paga · rojo <1,5% · amarillo 1,5–3% · verde 3–6% · naranja ≥6% (revisar por qué es tan alto). "
         "Es bruto, sobre la acción en NY; el CEDEAR cobra en pesos y con retención en origen.  \n"
@@ -770,116 +892,187 @@ with tab2:
 
 # --- 3. FCI -----------------------------------------------------------------
 with tab3:
-    st.subheader("Ranking de Fondos Comunes de Inversión")
-    modo_corto, modo_infl = selector_objetivo("obj_fci")
+    st.html('<div class="eyebrow m">Fondos comunes de inversión</div><div class="h2">Ranking de FCI</div>')
     rem_val, rem_nota = rem_inflacion()
-    c1, c2, c3, c4 = st.columns(4)
-    tipo_n = c1.selectbox("Categoría", ["Mercado de dinero"] if modo_corto else list(TIPOS_FCI))
-    dias = c2.selectbox("Período", [30, 90, 180, 365], index=0 if modo_corto else (3 if modo_infl else 1),
-                        format_func=lambda x: f"{x} días")
-    min_pat = c3.number_input("Patrimonio mínimo (millones)", min_value=0, value=1000, step=500)
-    infl_esp = c4.number_input("Inflación esperada anual (%)", min_value=0.0, max_value=500.0,
-                               value=float(round(rem_val, 1)) if rem_val else 25.0, step=0.5,
-                               help="Se usa para calcular el rendimiento real esperado. Por defecto, la del REM del BCRA; podés poner la tuya.")
-    st.caption(rem_nota if rem_nota else "No se pudo leer el REM: ingresá tu propia estimación de inflación anual.")
+    favs = st.session_state.setdefault("fci_favs", set())
+    cA, cB = st.columns([4, 1.3], vertical_alignment="bottom")
+    with cA:
+        modo_corto, modo_infl = selector_objetivo("obj_fci", con_hint=False)
+    solo_favs = cB.toggle("★ Mis seleccionados", key="fci_solo_favs")
+    s1, s2, s3, s4 = st.columns([3, 1.7, 1.7, 1.2], vertical_alignment="bottom")
+    busqueda = s1.text_input("Buscar", placeholder="Buscar por fondo o administradora", label_visibility="collapsed")
+    tipo_n = s2.selectbox("Categoría", ["Mercado de dinero"] if modo_corto else list(TIPOS_FCI))
+    dias = s3.selectbox("Período", [30, 90, 180, 365], index=0 if modo_corto else (3 if modo_infl else 1),
+                        format_func=lambda x: f"Últimos {x} días")
+    with s4.popover("Más filtros"):
+        min_pat = st.number_input("Patrimonio mínimo (millones)", min_value=0, value=1000, step=500)
+        infl_esp = st.number_input("Inflación esperada anual (%)", min_value=0.0, max_value=500.0, key="infl_fci",
+                                   value=float(round(rem_val, 1)) if rem_val else 25.0, step=0.5,
+                                   help="Por defecto, la del REM del BCRA; podés poner la tuya.")
+    hint_objetivo(modo_corto, modo_infl, (f"<b>Una pista para comparar:</b> la inflación esperada es de {E.num(infl_esp, 1)}% anual. "
+                                          "Buscá una TEA superior para proteger el valor de tus ahorros."))
+    st.caption(rem_nota if rem_nota else "No se pudo leer el REM: ingresá tu propia estimación de inflación anual en «Más filtros».")
+
+    r = pd.DataFrame()
     try:
         r = ranking_fci(TIPOS_FCI[tipo_n], dias)
-        if r.empty:
-            st.warning("No se pudieron armar datos para ese período.")
-        else:
-            r = r[r["Patrimonio (M)"] >= min_pat].sort_values("Rend. período %", ascending=False).copy()
-            r["Equiv. TNA plazo fijo 30d %"] = tna30_de_tea(r["TEA %"])
-            cols = ["fondo", "horizonte", "Rend. período %", "TEA %", "Equiv. TNA plazo fijo 30d %"]
-            try:
-                serie = serie_deposito_30d()
-                f_fin = pd.to_datetime(r["fecha"]).max()
-                ventana = serie[(serie["fecha"] > f_fin - timedelta(days=dias)) & (serie["fecha"] <= f_fin)]
-                if ventana.empty:
-                    ventana = serie.tail(1)
-                tna_ref = float(ventana["tna"].mean())
-                tea_ref = tea_de_tna30(tna_ref)
-                r["TEA vs referencia (p.p.)"] = r["TEA %"] - tea_ref
-                cols.append("TEA vs referencia (p.p.)")
-                st.info(f"Referencia: depósitos a 30 días (promedio de bancos, BCRA), promedio de los últimos {dias} días "
-                        f"hasta el {f_fin.date()}: TNA {tna_ref:.1f}% = TEA {tea_ref:.1f}%. "
-                        "Un fondo con 'TEA vs referencia' positiva rindió más que depositar a plazo fijo en ese mismo período.")
-            except Exception:
-                st.caption("Tasa de referencia no disponible en este momento.")
-            r["TEA real vs infl. esperada %"] = ((1 + r["TEA %"] / 100) / (1 + infl_esp / 100) - 1) * 100
-            cols.append("TEA real vs infl. esperada %")
-            try:
-                mep = mep_hist()
-                ini, fin = pd.to_datetime(r["fecha_ant"]), pd.to_datetime(r["fecha"])
-                var = {(a, b): mep_en(mep, b) / mep_en(mep, a) - 1 for a, b in set(zip(ini, fin))}
-                r["Rend. en USD (MEP) %"] = [((1 + x / 100) / (1 + var[(a, b)]) - 1) * 100
-                                             for x, a, b in zip(r["Rend. período %"], ini, fin)]
-                cols.append("Rend. en USD (MEP) %")
-            except Exception:
-                st.caption("Dólar MEP histórico no disponible en este momento.")
-            cols += ["Patrimonio (M)", "fecha"]
-            if modo_infl:
-                r = r[r["TEA real vs infl. esperada %"] > 0].sort_values("TEA real vs infl. esperada %", ascending=False)
-                if r.empty:
-                    st.info("Ningún fondo de esta categoría supera la inflación esperada con el rendimiento del período elegido.")
-            mostrar = (r[cols].head(30)
-                       .rename(columns={"fondo": "Fondo", "horizonte": "Horizonte", "fecha": "Dato al"})
-                       .reset_index(drop=True))
-            st.info("**Para ver en qué invierte un fondo:** marcá la casilla que está a la izquierda de su nombre. "
-                    "Abajo de la tabla aparece su cartera, el plazo de rescate, la inversión mínima y las comisiones.")
-            ev = st.dataframe(
-                mostrar.style.format(precision=2, na_rep="-"),
-                width="stretch", on_select="rerun", selection_mode="single-row",
-                key=f"fci_{tipo_n}_{dias}_{min_pat}",
-            )
-            filas_sel = ev.selection.rows if ev is not None else []
-            if filas_sel:
-                nombre_sel = mostrar.loc[filas_sel[0], "Fondo"]
-                try:
-                    f_det = buscar_fondo(detalle_fondos(), nombre_sel)
-                    if f_det is None:
-                        st.info(f"No encontré el detalle de «{nombre_sel}» en la base de fondos.")
-                    else:
-                        mostrar_detalle(f_det)
-                except Exception as e:
-                    st.warning(f"No se pudo cargar el detalle del fondo: {e}")
     except Exception as e:
         st.error(f"No se pudo consultar la API de FCI ahora: {e}")
-    st.caption("Fuente: CNV vía ArgentinaDatos. **Rend. período** es la variación real de la cuotaparte (ya incluye la "
-               "capitalización). **TEA** lo anualiza con interés compuesto, así que es comparable entre fondos y con otras "
-               "tasas; la TNA no lo es. En fondos de renta fija y variable, anualizar períodos cortos exagera: el valor "
-               "sube y baja. 'Equiv. TNA plazo fijo' dice qué TNA a 30 días daría lo mismo que el fondo, para compararlo con "
-               "lo que ofrece un banco. Rendimiento pasado no garantiza resultados futuros. Puede haber fondos en dólares mezclados: "
-               "no comparar directo con fondos en pesos. 'TEA real vs infl. esperada' compara la TEA del fondo con la inflación "
-               "esperada que figura arriba; 'Rend. en USD (MEP)' mide cuánto rindió en dólares en el período. Un valor positivo es ganancia real.")
+    if r.empty:
+        st.warning("No se pudieron armar datos para ese período.")
+    else:
+        r = r[r["Patrimonio (M)"] >= min_pat].sort_values("Rend. período %", ascending=False).copy()
+        r["eq_tna"] = tna30_de_tea(r["TEA %"])
+        tea_ref = None
+        try:
+            serie = serie_deposito_30d()
+            f_fin = pd.to_datetime(r["fecha"]).max()
+            ventana = serie[(serie["fecha"] > f_fin - timedelta(days=dias)) & (serie["fecha"] <= f_fin)]
+            tea_ref = tea_de_tna30(float((ventana if len(ventana) else serie.tail(1))["tna"].mean()))
+        except Exception:
+            pass
+        r["vs_ref"] = r["TEA %"] - tea_ref if tea_ref is not None else np.nan
+        r["vs_infl"] = ((1 + r["TEA %"] / 100) / (1 + infl_esp / 100) - 1) * 100
+        try:
+            mep = mep_hist()
+            ini, fin = pd.to_datetime(r["fecha_ant"]), pd.to_datetime(r["fecha"])
+            var = {(a_, b_): mep_en(mep, b_) / mep_en(mep, a_) - 1 for a_, b_ in set(zip(ini, fin))}
+            r["usd"] = [((1 + x / 100) / (1 + var[(a_, b_)]) - 1) * 100 for x, a_, b_ in zip(r["Rend. período %"], ini, fin)]
+        except Exception:
+            r["usd"] = np.nan
+        try:
+            det = detalle_fondos()
+        except Exception:
+            det = {}
+
+        def partes(n):
+            m = re.match(r"(.+?)\s*[-–]\s*(Clase.*)$", n)
+            base, clase = (m.group(1), m.group(2)) if m else (n, "")
+            d = buscar_fondo(det, n) if det else None
+            adm = (d or {}).get("administradora") or ""
+            return base, " · ".join(x for x in (adm, clase) if x) or " "
+
+        pp = r["fondo"].map(partes)
+        r["base"], r["sub"] = [p[0] for p in pp], [p[1] for p in pp]
+        if modo_infl:
+            r = r[r["vs_infl"] > 0].sort_values("vs_infl", ascending=False)
+        if solo_favs:
+            r = r[r["fondo"].isin(favs)]
+        q = _plano(busqueda)
+        if q:
+            r = r[(r["base"] + " " + r["sub"]).map(_plano).str.contains(q, regex=False)]
+        top = r.head(30)
+
+        if top.empty:
+            st.info("Ningún fondo cumple los filtros elegidos." if not modo_infl else
+                    "Ningún fondo de esta categoría supera la inflación esperada con el rendimiento del período elegido.")
+        else:
+            izq, der = st.columns([2.3, 1.05], gap="large")
+            with der:
+                nombres = list(top["fondo"])
+                sel = st.selectbox("Fondo seleccionado", nombres, format_func=lambda n: top.loc[top["fondo"] == n, "base"].iloc[0])
+                fila = top[top["fondo"] == sel].iloc[0]
+                st.button("★ Quitar de mis seleccionados" if sel in favs else "☆ Agregar a mis seleccionados",
+                          key="fci_fav", on_click=alternar_fav, args=(sel,))
+                fd = buscar_fondo(det, sel) if det else None
+                plazo_l = (fd or {}).get("plazoLiquidacionDias")
+                resc = "-" if plazo_l is None else ("Mismo día" if plazo_l == 0 else f"{plazo_l} día(s)")
+                mn = (fd or {}).get("inversionMinima")
+                sim_ = "$" if "peso" in str((fd or {}).get("monedaInversion", "peso")).lower() else "US$"
+                minimo = "-" if mn is None else E.num(mn, 0, f"{sim_} ")
+                svg = ""
+                try:
+                    fechas, vals = serie_fondo(TIPOS_FCI[tipo_n], sel, str(pd.to_datetime(fila["fecha_ant"]).date()),
+                                               str(pd.to_datetime(fila["fecha"]).date()))
+                    vs_ = pd.Series(vals).ffill().bfill()
+                    if vs_.notna().sum() >= 3:
+                        acum = list((vs_ / vs_.iloc[0] - 1) * 100)
+                        ref = [((1 + tea_ref / 100) ** ((f - fechas[0]).days / 365) - 1) * 100 for f in fechas] if tea_ref is not None else None
+                        svg = E.area_svg(acum, ref, uid="fci")
+                except Exception:
+                    pass
+                extra = [("Equiv. TNA plazo fijo 30d", E.num(fila["eq_tna"], 1, suf="%"))]
+                if fila["usd"] == fila["usd"]:
+                    extra.append((f"En USD (MEP), {dias} días", E.num(fila["usd"], 1, suf="%", signo=True)))
+                st.html(E.detalle_fondo(fila["base"], fila["sub"].strip(), E.color_de(fila["base"]), resc, minimo,
+                                        E.num(fila["Rend. período %"], 1, suf="%", signo=True), fila["Rend. período %"] >= 0, svg,
+                                        leyenda=("Este fondo", "Depósitos a 30 días" if tea_ref is not None else "Referencia"), extra=extra))
+                ver = st.toggle("Ver detalle completo", key="fci_ver")
+            with izq:
+                filas = []
+                for _, x in top.iterrows():
+                    rc = "pos" if x["Rend. período %"] >= 0 else "neg"
+                    filas.append([
+                        E.activo(x["base"], x["sub"], x["base"][:1].upper(), E.color_de(x["base"])),
+                        f'<span class="{rc} strong">{"↑" if x["Rend. período %"] >= 0 else "↓"} {E.num(abs(x["Rend. período %"]), 2, suf="%")}</span>',
+                        f'<span class="strong">{E.num(x["TEA %"], 2, suf="%")}</span>',
+                        E.chip(E.num(x["vs_infl"], 2, suf="%", signo=True), "up" if x["vs_infl"] > 0 else "down"),
+                        E.chip(E.num(x["vs_ref"], 2, suf=" p.p.", signo=True), "up" if x["vs_ref"] > 0 else "down") if x["vs_ref"] == x["vs_ref"] else "-",
+                        E.num(x["Patrimonio (M)"], 0, "$ ", " M"),
+                    ])
+                st.html(f'<div class="panel-top" style="padding:6px 4px 14px"><div><div class="eyebrow m">Ranking actualizado</div>'
+                        f'<div class="h2" style="font-size:1.9rem;margin:2px 0 0">Fondos que mejor encajan</div></div>'
+                        f'<span class="chip ch-flat" style="font-size:.85rem">{len(r)} resultados</span></div>'
+                        + E.tabla([("Fondo", "l"), (f"Rend. {dias} días", "l"), ("TEA", "l"), ("Vs. inflación", "l"),
+                                   ("Vs. plazo fijo", "l"), ("Patrimonio", "r")], filas, sel=nombres.index(sel)))
+            if ver and fd:
+                detalle_completo(fd)
+            elif ver:
+                st.info("No encontré el detalle de este fondo en la base de fondos.")
+    st.caption("Fuente: CNV vía ArgentinaDatos. **Rend.** es la variación real de la cuotaparte (ya incluye la capitalización y es neta de honorarios); "
+               "**TEA** lo anualiza con interés compuesto, comparable entre fondos y con otras tasas. **Vs. inflación** compara la TEA con la inflación "
+               "esperada (REM o la que elijas); **Vs. plazo fijo** con el promedio de depósitos a 30 días en el mismo período. En renta fija y variable, "
+               "anualizar períodos cortos exagera. Rendimiento pasado no garantiza resultados futuros. Puede haber fondos en dólares mezclados.")
 
 # --- 4. Simulador -----------------------------------------------------------
 with tab4:
-    st.subheader("Simulador de rentabilidad: la capitalización importa")
-    c1, c2, c3, c4 = st.columns(4)
-    monto = c1.number_input("Monto inicial", min_value=0.0, value=1_000_000.0, step=100_000.0)
-    tna = c2.number_input("TNA %", min_value=0.0, value=30.0, step=1.0) / 100
-    plazo = c3.number_input("Plazo (días)", min_value=1, value=365, step=30)
-    infl = c4.number_input("Inflación mensual esperada %", min_value=0.0, value=2.0, step=0.5) / 100
+    c_hero = st.container()
+    with st.container(key="grandes_tasas"):
+        c1, c2, c3, c4 = st.columns(4)
+        monto = c1.number_input("Monto inicial ($)", min_value=0.0, value=1_000_000.0, step=100_000.0)
+        tna = c2.number_input("Tasa nominal anual (%)", min_value=0.0, value=30.0, step=1.0) / 100
+        plazo = c3.number_input("Plazo (días)", min_value=1, value=365, step=30)
+        infl = c4.number_input("Inflación mensual esperada (%)", min_value=0.0, value=2.0, step=0.5) / 100
 
     FREC = {"Diaria": 365, "Mensual": 12, "Trimestral": 4, "Semestral": 2, "Anual": 1}
-    filas = [{
-        "Capitalización": "Sin capitalizar (interés simple)",
-        "TEA %": ((1 + tna * plazo / 365) ** (365 / plazo) - 1) * 100,
-        "Capital final": monto * (1 + tna * plazo / 365),
-    }]
+    filas = [("Sin capitalizar", "Simple", ((1 + tna * plazo / 365) ** (365 / plazo) - 1) * 100, monto * (1 + tna * plazo / 365))]
     for nombre, m in FREC.items():
-        filas.append({"Capitalización": nombre, "TEA %": tea(tna, m) * 100,
-                      "Capital final": monto * (1 + tna / m) ** (m * plazo / 365)})
-    sim = pd.DataFrame(filas)
-    sim["Ganancia"] = sim["Capital final"] - monto
-    sim["Rend. período %"] = sim["Ganancia"] / monto * 100 if monto else 0
+        corto = {"Trimestral": "Trim.", "Semestral": "Sem."}.get(nombre, nombre)
+        filas.append((nombre, corto, tea(tna, m) * 100, monto * (1 + tna / m) ** (m * plazo / 365)))
     inflacion = (1 + infl) ** (plazo / 30) - 1
-    sim["Rend. real %"] = ((1 + sim["Rend. período %"] / 100) / (1 + inflacion) - 1) * 100
+    mejor = max(range(len(filas)), key=lambda i: filas[i][3])
+    gan = [f[3] - monto for f in filas]
+    real = [((1 + g / monto) / (1 + inflacion) - 1) * 100 if monto else 0 for g in gan]
 
-    st.dataframe(sim.style.format(precision=2), width="stretch", hide_index=True)
-    st.caption(f"Inflación acumulada estimada en {plazo} días: {inflacion * 100:.1f}%. "
-               "TEA = (1 + TNA/m)^m − 1. Con 30% de TNA: mensual ≈ 34,5% de TEA, diaria ≈ 35,0%. "
-               "Con plazos que no son múltiplos exactos del período, es una aproximación.")
+    with c_hero:
+        st.html('<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap;margin-bottom:6px">'
+                '<div style="flex:1;min-width:280px"><div class="eyebrow m">✦ Proyectá tu inversión</div>'
+                '<div class="h2" style="font-size:3rem;max-width:620px">La capitalización hace la diferencia.</div>'
+                '<div class="sub" style="max-width:560px">Ajustá los valores y compará cuánto puede crecer tu dinero según la frecuencia con la que se '
+                'reinvierten los intereses.</div></div>'
+                + E.tarjeta_oscura("Mejor resultado estimado", E.num(filas[mejor][3], 0, "$ "),
+                                   f"{E.num(gan[mejor], 0, '+$ ')} con capitalización {filas[mejor][0].lower()}") + "</div>")
+
+    L, R = st.columns([1, 1.45], gap="large")
+    with L:
+        barras = E.barras([(f[1], g, E.num(f[2], 1, suf="%")) for f, g in zip(filas, gan)], mejor)
+        st.html(f'<div class="panel" style="padding:24px"><div class="row-sp"><div><small class="muted">Capital final proyectado</small>'
+                f'<div class="h2" style="font-size:2rem;margin:2px 0 0">{E.num(filas[mejor][3], 0, "$ ")}</div></div>'
+                f'<span class="pillb">{plazo} días</span></div>{barras}'
+                f'<div style="margin-top:16px;padding-top:12px;border-top:1px dashed #D9D0C3;font-size:.82rem" class="muted">'
+                f'Las barras muestran la ganancia por frecuencia; sobre la mejor, su TEA. Inflación acumulada estimada: '
+                f'<b style="color:#6A4FA0">{E.num(inflacion * 100, 1, suf="%")}</b></div></div>')
+    with R:
+        rows = []
+        for i, f in enumerate(filas):
+            nombre = f[0] + ('<span class="badge">MAYOR RETORNO</span>' if i == mejor else "")
+            rows.append([nombre, E.num(f[2], 2, suf="%"), f'<span class="strong">{E.num(f[3], 0, "$ ")}</span>',
+                         f'<span class="pos strong">{E.num(gan[i], 0, "+$ ")}</span>',
+                         E.chip(E.num(real[i], 2, suf="%", signo=True), "up" if real[i] >= 0 else "down")])
+        st.html('<div class="eyebrow m" style="margin:2px 0 8px">Comparativa completa</div>' + E.tabla(
+            [("Frecuencia", "l"), ("TEA", "l"), ("Capital final", "l"), ("Ganancia", "l"), ("Rend. real", "l")], rows, sel=mejor))
+    st.caption("TEA = (1 + TNA/m)^m − 1. Con 30% de TNA: mensual ≈ 34,5% de TEA, diaria ≈ 35,0%. Rend. real descuenta la inflación acumulada "
+               "estimada. Con plazos que no son múltiplos exactos del período, es una aproximación.")
 
 # --- 5. Renta fija ----------------------------------------------------------
 with tab5:
@@ -887,7 +1080,7 @@ with tab5:
     modo_corto, modo_infl = selector_objetivo("obj_rf")
     if modo_infl:
         rem_val2, rem_nota2 = rem_inflacion()
-        infl_rf = st.number_input("Inflación esperada anual (%)", min_value=0.0, max_value=500.0,
+        infl_rf = st.number_input("Inflación esperada anual (%)", min_value=0.0, max_value=500.0, key="infl_rf",
                                   value=float(round(rem_val2, 1)) if rem_val2 else 25.0, step=0.5,
                                   help="Por defecto, la del REM del BCRA; podés poner la tuya.")
         st.caption(rem_nota2 if rem_nota2 else "No se pudo leer el REM: ingresá tu propia estimación de inflación anual.")
@@ -1208,58 +1401,74 @@ with tab6:
             if (qty < -1e-9).any().any():
                 st.warning("Hay ventas por más acciones de las que tenías.")
 
-            st.markdown(f"### Tenencia actual (al {res.index[-1]:%d/%m/%Y})")
-            st.caption("Lo que tenés **hoy**, después de aplicar todos los movimientos del historial.")
+            # --- Tenencia actual ---
             px_ult = close.reindex(res.index).iloc[-1]
             ten = pd.DataFrame({"Cantidad": ult_qty, "Precio USD": px_ult[ult_qty.index], "Valor USD": ult_qty * px_ult[ult_qty.index]})
             ten = ten[ten["Cantidad"].abs() > 1e-9]
             ten.loc["Efectivo (USD)"] = [np.nan, np.nan, res["efectivo_usd"].iloc[-1]]
             ten["% de la cartera"] = ten["Valor USD"] / ten["Valor USD"].sum() * 100
             ten.index.name = "Activo"
-            h1, h2 = st.columns([2, 3])
-            torta = ten[ten["Valor USD"] > 0.005].reset_index()
-            if not torta.empty:
-                torta["Etiqueta"] = torta["% de la cartera"].map(lambda x: f"{x:.1f}%")
-                arco = alt.Chart(torta).encode(
-                    theta=alt.Theta("Valor USD:Q", stack=True), color=alt.Color("Activo:N", legend=alt.Legend(title=None, orient="bottom")),
-                    tooltip=["Activo", alt.Tooltip("Valor USD:Q", format=",.2f"), "Etiqueta"])
-                grafico = (arco.mark_arc(innerRadius=35) + arco.mark_text(radius=82, size=12).encode(text="Etiqueta:N")).properties(height=280)
-                h1.altair_chart(grafico, width="stretch")
-            h2.dataframe(ten.style.format(precision=2, na_rep="-"), width="stretch")
+            items = [(i, float(p)) for i, p in ten["% de la cartera"].items() if p > 0.05]
+            st.html(E.composicion("¿Qué tenés hoy?", f"Tenencia al {res.index[-1]:%d/%m/%Y}: el resultado de aplicar todos los movimientos del historial.",
+                                  items, eyebrow="Tenencia actual", centro_txt="posiciones"))
+            with st.expander("Ver la tenencia en detalle"):
+                st.dataframe(ten.style.format(precision=2, na_rep="-"), width="stretch")
 
-            def resumen(v, f):
-                r = retorno_diario(v, f)
-                fl = f[f != 0]
-                tir = xirr(list(fl.index), list(fl.values), v.iloc[-1], v.index[-1]) if len(fl) and (v.index[-1] - fl.index[0]).days >= 60 else np.nan
-                return r, {"Valor actual": v.iloc[-1], "Aportes netos (depósitos − retiros)": f.sum(), "Ganancia": v.iloc[-1] - f.sum(),
-                           "Rendimiento ajustado por aportes (TWR) %": ((1 + r).prod() - 1) * 100, "TIR anual del dinero %": tir * 100}
-
-            r_usd, m_usd = resumen(res["valor_usd"], res["flujo_usd"])
-            tabla_res = pd.DataFrame({"USD": m_usd})
-            r_ars = None
-            if "valor_ars" in res:
-                r_ars, m_ars = resumen(res["valor_ars"], res["flujo_ars"])
-                tabla_res["Pesos (ARS)"] = pd.Series(m_ars)
-            st.markdown(f"### Rendimiento del {res.index[0]:%d/%m/%Y} al {res.index[-1]:%d/%m/%Y}")
-            st.dataframe(tabla_res.style.format(precision=2, na_rep="-"), width="stretch")
-            st.caption("**TWR** encadena el rendimiento de cada día quitando el efecto de los depósitos y retiros: es la medida para saber si "
-                       "elegiste bien las acciones. La **TIR del dinero** sí pesa cuándo pusiste cada monto (se calcula con 60 días o más). "
-                       "En pesos, el rendimiento incluye lo que subió o bajó el dólar MEP.")
-
-            mon_v = st.radio("Ver gráficos y detalle mensual en", ["USD"] + (["Pesos (ARS)"] if r_ars is not None else []),
-                             horizontal=True, key="cart_mon")
-            v, f, r = (res["valor_usd"], res["flujo_usd"], r_usd) if mon_v == "USD" else (res["valor_ars"], res["flujo_ars"], r_ars)
-            gA, gB = st.columns(2)
-            gA.caption("Valor de la cartera y aportes acumulados")
-            gA.line_chart(pd.DataFrame({"Valor de la cartera": v, "Aportes netos acumulados": f.cumsum()}), height=220)
-            gB.caption("Rendimiento acumulado % (TWR)")
-            gB.line_chart(pd.DataFrame({"Rendimiento acumulado % (TWR)": ((1 + r).cumprod() - 1) * 100}), height=220)
-            mes = v.index.to_period("M").astype(str)
-            mensual = pd.DataFrame({"Rend. del mes % (TWR)": ((1 + r).groupby(mes).prod() - 1) * 100,
-                                    "Aportes netos del mes": f.groupby(mes).sum(), "Valor al cierre": v.groupby(mes).last()})
-            mensual.index.name = "Mes"
-            st.markdown("**Mes a mes:** el rendimiento de cada mes no cambia aunque hayas depositado o retirado ese mes.")
-            st.dataframe(mensual.style.format(precision=2), width="stretch")
+            # --- Evolución ---
+            r_usd, m_usd = resumen_cartera(res["valor_usd"], res["flujo_usd"])
+            r_ars, m_ars = (resumen_cartera(res["valor_ars"], res["flujo_ars"]) if "valor_ars" in res else (None, None))
+            hA, hB = st.columns([5, 1.1], vertical_alignment="bottom")
+            moneda = hB.segmented_control("Moneda", ["USD"] + (["ARS"] if r_ars is not None else []), default="USD",
+                                          key="cart_mon", label_visibility="collapsed") or "USD"
+            es_usd = moneda == "USD"
+            v, f, r, m_ = ((res["valor_usd"], res["flujo_usd"], r_usd, m_usd) if es_usd
+                           else (res["valor_ars"], res["flujo_ars"], r_ars, m_ars))
+            sym = "US$ " if es_usd else "$ "
+            gan = m_["Ganancia"]
+            hA.html(f'<div class="eyebrow m" style="margin-top:18px">Evolución · {res.index[0]:%d/%m/%Y} a {res.index[-1]:%d/%m/%Y}</div>'
+                    f'<div class="h2">Tu estrategia {"ganó" if gan >= 0 else "perdió"} {E.num(abs(gan), 1, sym)}</div>')
+            st.html(E.strip([("Valor actual", E.num(m_["Valor actual"], 1, sym), f"Al {res.index[-1]:%d/%m/%Y}", False),
+                             ("Aportes netos", E.num(m_["Aportes netos (depósitos − retiros)"], 1, sym), "Depósitos menos retiros", False),
+                             ("Ganancia", E.num(gan, 1, sym, signo=True), "Resultado acumulado", True),
+                             ("Rendimiento TWR", E.num(m_["Rendimiento ajustado por aportes (TWR) %"], 2, suf="%", signo=True),
+                              "Sin efecto de aportes", False)]))
+            try:
+                bval, bacum = benchmark_sp(res, precios_indice(str((res.index[0] - pd.Timedelta(days=7)).date())), es_usd)
+            except Exception:
+                bval = bacum = None
+            tw = ((1 + r).cumprod() - 1) * 100
+            gA, gB = st.columns(2, gap="large")
+            with gA:
+                with st.container(key="card_valor"):
+                    st.html(f'<small class="muted">Valor de la cartera</small><div class="h2" style="font-size:1.9rem;margin:2px 0 4px">'
+                            f'{E.num(m_["Valor actual"], 1, sym)}</div>')
+                    d1 = pd.DataFrame({"Tu cartera": v})
+                    if bval is not None:
+                        d1["S&P 500 (mismos aportes)"] = bval
+                    st.altair_chart(area_alt(d1), width="stretch")
+            with gB:
+                with st.container(key="card_twr"):
+                    st.html(f'<small class="muted">Rendimiento acumulado (TWR)</small><div class="h2" style="font-size:1.9rem;margin:2px 0 4px">'
+                            f'{E.num(tw.iloc[-1], 2, suf="%", signo=True)}</div>')
+                    d2 = pd.DataFrame({"Tu cartera": tw})
+                    if bacum is not None:
+                        d2["S&P 500"] = bacum
+                    st.altair_chart(area_alt(d2, cero=True), width="stretch")
+            with st.container(key="card_mes"):
+                mes = v.index.to_period("M")
+                pct_m = ((1 + r).groupby(mes).prod() - 1) * 100
+                cierre_m = v.groupby(mes).last()
+                st.html('<div class="eyebrow m">Mes a mes</div><div class="h2" style="font-size:1.7rem">Rendimiento sin efecto de movimientos</div>'
+                        '<div class="sub" style="font-size:.85rem">El TWR permite comparar períodos de forma justa, aunque hayas depositado o retirado ese mes.</div>'
+                        + E.meses([(MESES_ES[p.month - 1], float(pct_m[p]), E.num(cierre_m[p], 0, sym)) for p in pct_m.index]))
+            with st.expander("Ver el resumen completo en dólares y pesos"):
+                tabla_res = pd.DataFrame({"USD": m_usd})
+                if m_ars is not None:
+                    tabla_res["Pesos (ARS)"] = pd.Series(m_ars)
+                st.dataframe(tabla_res.style.format(precision=2, na_rep="-"), width="stretch")
+                st.caption("**TWR** encadena el rendimiento de cada día quitando el efecto de los depósitos y retiros: mide si elegiste bien las acciones. "
+                           "La **TIR del dinero** sí pesa cuándo pusiste cada monto (se calcula con 60 días o más). En pesos, el rendimiento incluye "
+                           "lo que subió o bajó el dólar MEP. La línea del S&P 500 muestra qué habría pasado con los mismos aportes y retiros.")
             st.caption("Compras, ventas y cambios al precio de cierre del día (o del siguiente día de mercado). Precios de Yahoo Finance en dólares. "
                        "No incluye comisiones, impuestos ni dividendos. La conversión a pesos usa el dólar MEP de cada fecha.")
 

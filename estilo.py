@@ -1,0 +1,349 @@
+"""Tema visual y componentes HTML del panel (fondo crema, tarjetas redondeadas, terracota y verde).
+
+Todo el texto dinámico pasa por esc() para que un nombre raro de la API no pueda romper la página.
+"""
+import html as _html
+import re
+from math import pi
+
+PALETA = ["#E2704A", "#8C6FB3", "#D6A64F", "#4E8B7A", "#CDC3B5", "#5B7DB1"]
+FUENTE_URL = "https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap"
+VERDE, ROJO, GRIS = "#2E7D5B", "#B84A4A", "#8A8F98"
+
+
+def esc(x):
+    return _html.escape(str(x), quote=True)
+
+
+def compactar(h):
+    """Evita que Markdown interprete sangrías o líneas en blanco como bloques de código."""
+    return re.sub(r">\s+<", "><", re.sub(r"\s*\n\s*", " ", h)).strip()
+
+
+def num(x, dec=0, pref="", suf="", signo=False):
+    """Formato argentino: 1.234,56"""
+    if x is None or x != x:
+        return "-"
+    s = f"{abs(x):,.{dec}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    sg = "-" if x < 0 else ("+" if signo and x > 0 else "")
+    return f"{sg}{pref}{s}{suf}"
+
+
+def color_de(texto):
+    return PALETA[sum(ord(c) for c in str(texto)) % len(PALETA)]
+
+
+CSS = """
+@import url('__FUENTE__');
+:root{--bg:#F5F2EC;--card:#FFFEFA;--borde:#EAE3D8;--texto:#26221F;--suave:#7C746B;--terra:#E2704A;
+--verde:#2E7D5B;--verde-bg:#E3F2E8;--rojo:#B84A4A;--rojo-bg:#F8DAD8;--neu:#6B7280;--neu-bg:#E8E8EA;--dark:#2A2420}
+html,body,.stApp,[class*="css"]{font-family:'Instrument Sans','Hanken Grotesk',system-ui,-apple-system,sans-serif;color:var(--texto)}
+.stApp{background:radial-gradient(1100px 520px at 88% -8%,#EEE9F7 0%,transparent 62%),
+radial-gradient(900px 520px at -5% 0%,#FBEEE4 0%,transparent 58%),var(--bg)}
+header[data-testid="stHeader"]{background:transparent}
+.block-container{max-width:1300px;padding-top:2.4rem;padding-bottom:4rem}
+h1,h2,h3{letter-spacing:-0.02em;font-weight:500}
+/* pestañas */
+.stTabs [data-baseweb="tab-list"]{gap:4px;background:#EFEAE2;padding:6px;border-radius:18px;width:fit-content;max-width:100%;overflow-x:auto}
+.stTabs [data-baseweb="tab"]{border-radius:13px;padding:9px 18px;height:auto;font-weight:500;color:var(--suave)}
+.stTabs [aria-selected="true"]{background:var(--dark);color:#fff !important;box-shadow:0 4px 14px rgba(42,36,32,.25)}
+.stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none}
+/* control segmentado */
+[data-testid="stButtonGroup"]{background:#EFEAE2;padding:6px;border-radius:18px;width:fit-content;gap:4px}
+[data-testid="stButtonGroup"] button{border:0;border-radius:13px;padding:10px 20px;background:transparent;color:var(--suave);font-weight:500}
+[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
+[data-testid="stButtonGroup"] button[data-testid="stBaseButton-segmented_controlActive"]{background:var(--dark);color:#fff;box-shadow:0 4px 14px rgba(42,36,32,.25)}
+/* entradas */
+div[data-baseweb="input"],div[data-baseweb="select"]>div,div[data-baseweb="base-input"]{background:var(--card) !important;border:1px solid var(--borde) !important;border-radius:15px !important}
+.stTextInput input,.stNumberInput input,.stDateInput input{font-weight:500}
+.stButton>button,.stDownloadButton>button,[data-testid="stPopover"]>button{border-radius:14px;border:1px solid var(--borde);background:var(--card);font-weight:500;padding:.55rem 1.1rem}
+.stButton>button[kind="primary"],.stFormSubmitButton>button{background:var(--dark);color:#fff;border-color:var(--dark)}
+[data-testid="stExpander"]{background:var(--card);border:1px solid var(--borde);border-radius:24px;overflow:hidden;margin-bottom:14px}
+[data-testid="stExpander"] summary{padding:18px 24px;background:linear-gradient(90deg,#EEF0FA,#F7F4EE);font-size:1.15rem;font-weight:600}
+[data-testid="stExpander"] details>div{padding:0}
+[data-testid="stAlert"]{border-radius:18px}
+[data-testid="stExpander"] .panel{border:0;border-radius:0;box-shadow:none}
+[data-testid="stDataFrame"]{border:1px solid var(--borde);border-radius:18px;overflow:hidden}
+[data-testid="stMetric"]{background:var(--card);border:1px solid var(--borde);border-radius:20px;padding:14px 18px}
+[class*="st-key-card"]{background:var(--card);border:1px solid var(--borde);border-radius:26px;padding:20px 22px}
+[class*="st-key-grandes"] input{font-size:1.7rem;font-weight:500;padding:.55rem .8rem}
+[class*="st-key-grandes"] [data-baseweb="input"]{border-radius:20px !important}
+/* textos */
+.eyebrow{font-size:.74rem;letter-spacing:.16em;text-transform:uppercase;color:#3B4F8F;font-weight:500}
+.eyebrow.m{color:#8A7A6C}
+.hero h1{font-size:3rem;line-height:1.04;margin:.35rem 0 .5rem;letter-spacing:-0.035em;font-weight:500}
+.hero p{font-size:1.15rem;color:var(--suave);margin:0}
+.hero{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-bottom:26px}
+.hero .upd{text-align:right;font-size:.95rem}.hero .upd small{display:block;color:var(--suave)}
+.h2{font-size:2.3rem;line-height:1.1;letter-spacing:-0.03em;font-weight:500;margin:.3rem 0 .4rem}
+.sub{color:var(--suave);font-size:1.02rem}
+.muted{color:var(--suave)}
+/* tarjetas KPI */
+.kpis{display:flex;gap:16px;margin:10px 0 6px}
+.kpi{flex:1;min-width:0;background:var(--card);border:1px solid var(--borde);border-radius:26px;padding:20px 22px;box-shadow:0 6px 24px rgba(60,40,20,.04)}
+.kpi-top{display:flex;justify-content:space-between;align-items:center}
+.kpi-top b{font-size:1.02rem;font-weight:600}
+.info{width:18px;height:18px;border:1.5px solid #B9B2A8;border-radius:50%;font-size:.65rem;display:inline-flex;align-items:center;justify-content:center;color:#9A9288}
+.kpi small{display:block;color:var(--suave);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;margin-top:2px}
+.kpi-mid{display:flex;justify-content:space-between;align-items:center;margin:16px 0 14px}
+.kpi .v{white-space:nowrap;font-size:2rem;font-weight:500;letter-spacing:-0.03em}
+.chip{display:inline-block;white-space:nowrap;padding:4px 11px;border-radius:10px;font-size:.78rem;font-weight:600}
+.ch-up{background:var(--verde-bg);color:var(--verde)}.ch-down{background:var(--rojo-bg);color:var(--rojo)}.ch-flat{background:var(--neu-bg);color:var(--neu)}
+.ch-warn{background:#FBEBD0;color:#9A6A12}.ch-yel{background:#FFF3C9;color:#8A6D00}.ch-org{background:#FFE3C2;color:#A85A00}
+/* tablas */
+.panel{background:var(--card);border:1px solid var(--borde);border-radius:26px;overflow:hidden;box-shadow:0 6px 24px rgba(60,40,20,.04)}
+.panel-top{display:flex;justify-content:space-between;align-items:center;padding:12px 24px 4px}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{font-size:.7rem;letter-spacing:.13em;text-transform:uppercase;color:#4B5568;text-align:left;padding:16px 18px;background:#F4F5F9;font-weight:600;white-space:nowrap}
+.tbl td{white-space:nowrap;padding:15px 18px;border-top:1px solid #EFEAE1;vertical-align:middle;font-size:.98rem}
+.tbl tr:hover td{background:#FAF8F3}
+.tbl td.r,.tbl th.r{text-align:right}
+.tbl tr.sel td{background:#FBE6DF}.tbl tr.sel td:first-child{box-shadow:inset 4px 0 0 var(--terra)}
+.nm{display:flex;gap:14px;align-items:center}
+.nm b{display:block;font-size:1.02rem;font-weight:600}.nm span{color:var(--suave);font-size:.84rem}
+.av{width:44px;height:44px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.95rem;flex:none;background:#ECEEF8;color:#44508A;border:1px solid #DFE2F2}
+.av.c{color:#fff;border:0}
+.strong{font-weight:600}.pos{color:var(--verde)}.neg{color:var(--rojo)}
+/* RSI */
+.pill{border-radius:15px;padding:10px 14px 11px;min-width:150px;border:1px solid}
+.pt{display:flex;justify-content:space-between;align-items:baseline}
+.pl{font-size:.7rem;letter-spacing:.09em;font-weight:700}.pv{font-size:1.1rem;font-weight:700}
+.bar{height:6px;border-radius:4px;background:rgba(0,0,0,.09);margin-top:8px;overflow:hidden}.bar i{display:block;height:100%;border-radius:4px}
+.p-buy{background:#DDF0E4;border-color:#BFE0CC;color:#1F6B47}.p-buy .bar i{background:#2E8B5E}
+.p-sell{background:#F8DAD8;border-color:#EFBDB9;color:#9A3C3C}.p-sell .bar i{background:#C45555}
+.p-neu{background:#EAEAEC;border-color:#DADADD;color:#5F6571}.p-neu .bar i{background:#7C8290}
+.legend{display:flex;gap:20px;justify-content:flex-end;font-size:.92rem;color:#4B5563;margin:6px 6px 18px}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px}
+/* banner / detalle */
+.hint{display:flex;align-items:center;gap:14px;padding:16px 20px;border-radius:20px;background:linear-gradient(90deg,#F1ECFA,#FBF7F0);border:1px solid #E6DDF3;margin:14px 0 22px}
+.hint .ic{width:42px;height:42px;border-radius:13px;background:#8C6FB3;color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex:none}
+.detail{background:linear-gradient(180deg,#FCEBE5 0%,#FFFEFA 38%);border:1px solid var(--borde);border-radius:28px;padding:24px;box-shadow:0 6px 24px rgba(60,40,20,.05)}
+.detail .eyebrow{color:#B0432A;font-weight:600}
+.mini-row{display:flex;gap:12px;margin:18px 0}
+.mini{flex:1;border:1px solid var(--borde);border-radius:18px;padding:13px 15px;background:#fff}
+.mini small{color:var(--suave);font-size:.78rem}.mini div{font-size:1.25rem;font-weight:500;margin-top:5px}
+.row-sp{display:flex;justify-content:space-between;align-items:center}
+.lg{display:flex;gap:16px;font-size:.78rem;color:var(--suave);margin-top:6px}
+.lg i{flex:none;display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+/* composición */
+.comp{display:flex;gap:30px;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--borde);border-radius:30px;padding:34px 38px;box-shadow:0 6px 24px rgba(60,40,20,.04)}
+.comp .izq{flex:1;min-width:0}
+.leg{display:flex;flex-wrap:wrap;gap:0 34px;margin-top:22px}
+.leg-i{display:flex;justify-content:space-between;align-items:center;width:300px;max-width:100%;padding:11px 0;border-bottom:1px solid #EFEAE1;font-size:.97rem}
+.leg-i span{display:flex;align-items:center;gap:11px}.leg-i i{width:11px;height:11px;border-radius:50%;display:inline-block;flex:none}
+.leg-i b{font-weight:700}
+/* tasas */
+.dark{background:var(--dark);color:#fff;border-radius:24px;padding:22px 28px;min-width:300px;box-shadow:0 14px 34px rgba(42,36,32,.25)}
+.dark small{letter-spacing:.14em;font-size:.7rem;color:#CFC6BB;text-transform:uppercase}
+.dark .v{font-size:2.2rem;font-weight:500;margin:6px 0 4px;letter-spacing:-0.02em}.dark .s{color:#F2B49C;font-size:.85rem}
+.pillb{display:inline-block;background:#E8E0F5;color:#6A4FA0;border-radius:999px;padding:5px 14px;font-size:.8rem;font-weight:600}
+.badge{display:inline-block;background:var(--terra);color:#fff;border-radius:999px;padding:2px 9px;font-size:.62rem;letter-spacing:.06em;font-weight:700;margin-left:8px;vertical-align:middle}
+.bars{display:flex;align-items:flex-end;gap:14px;height:210px;margin-top:22px;border-bottom:1px solid #E7E0D5}
+.bc{flex:1;text-align:center;display:flex;flex-direction:column;justify-content:flex-end;height:100%}
+.bc .b{border-radius:12px 12px 0 0;background:#D3C9BC}
+.bc.best .b{background:linear-gradient(180deg,#E2704A,#F2A485);box-shadow:0 8px 18px rgba(226,112,74,.35)}
+.bc .t{font-size:.72rem;color:#8A7A6C;margin-bottom:5px;min-height:15px}
+.bl{display:flex;gap:14px;margin-top:9px}.bl div{flex:1;text-align:center;font-size:.72rem;color:#8A7A6C}.bl .best{color:#B0432A;font-weight:700}
+/* cartera */
+.strip{display:flex;background:var(--card);border:1px solid var(--borde);border-radius:24px;overflow:hidden;margin:16px 0}
+.cell{flex:1;padding:18px 22px;border-right:1px solid #EFEAE1}.cell:last-child{border-right:0}
+.cell small{color:var(--suave);font-size:.8rem;display:block}.cell .v{white-space:nowrap;font-size:1.7rem;font-weight:500;letter-spacing:-0.02em;margin:3px 0}
+.cell.hl{background:#FBE6DF}.cell.hl .v{color:#B0432A}
+.mm{display:flex;gap:6px;align-items:flex-end;margin-top:14px}
+.mm .col{flex:1;text-align:center;border-bottom:1px solid #E7E0D5;padding-bottom:10px}
+.mm .col small{display:block;color:var(--suave);font-size:.78rem}.mm .col .p{font-size:.88rem;font-weight:600;margin:5px 0 14px}
+.mm .col .area{height:130px;display:flex;align-items:flex-end;justify-content:center}
+.mm .col .bb{width:42px;border-radius:9px 9px 0 0;background:linear-gradient(180deg,#5E9E8B,#A8D0C4)}
+.mm .col .bb.n{background:linear-gradient(180deg,#E2704A,#F2B49C)}
+.mm .col .vv{font-size:.74rem;color:var(--suave);margin-top:8px}
+@media (max-width:900px){.kpis{flex-wrap:wrap}.kpi{flex:1 1 45%}.hero h1{font-size:2.3rem}.comp{flex-direction:column}.hero{flex-direction:column;align-items:flex-start}.strip{flex-wrap:wrap}.cell{flex:1 1 45%}}
+"""
+
+
+def css():
+    return "<style>" + CSS.replace("__FUENTE__", FUENTE_URL) + "</style>"
+
+
+# ------------------------------------------------------------------ componentes
+def hero(eyebrow, titulo, subtitulo, actualizado=None):
+    upd = f'<div class="upd"><small>Actualizado</small><b>{esc(actualizado)}</b></div>' if actualizado else ""
+    return compactar(f'<div class="hero"><div><div class="eyebrow">{esc(eyebrow)}</div><h1>{esc(titulo)}</h1>'
+                     f'<p>{esc(subtitulo)}</p></div>{upd}</div>')
+
+
+def spark(vals, color, w=96, h=38):
+    v = [float(x) for x in vals if x is not None and x == x]
+    if len(v) < 2:
+        return ""
+    lo, hi = min(v), max(v)
+    rng = (hi - lo) or 1.0
+    pts = " ".join(f"{i * (w - 4) / (len(v) - 1) + 2:.1f},{h - 4 - (x - lo) / rng * (h - 8):.1f}" for i, x in enumerate(v))
+    return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}"><polyline points="{pts}" fill="none" stroke="{color}" '
+            f'stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>')
+
+
+def chip(texto, tipo="flat", flecha=""):
+    f = f"{esc(flecha)} " if flecha else ""
+    return f'<span class="chip ch-{tipo}">{f}{esc(texto)}</span>'
+
+
+def kpi_card(titulo, sub, valor, delta=None, tipo="flat", flecha="", serie=None, ayuda=""):
+    col = {"up": VERDE, "down": ROJO}.get(tipo, GRIS)
+    ch = chip(delta, tipo, flecha) if delta else ""
+    return (f'<div class="kpi"><div class="kpi-top"><b>{esc(titulo)}</b><span class="info" title="{esc(ayuda)}">i</span></div>'
+            f'<small>{esc(sub)}</small><div class="kpi-mid"><span class="v">{esc(valor)}</span>{spark(serie or [], col)}</div>{ch}</div>')
+
+
+def kpis(cards_html):
+    return compactar('<div class="kpis">' + "".join(cards_html) + "</div>")
+
+
+def avatar(texto, color=None):
+    if color:
+        return f'<span class="av c" style="background:{color}">{esc(texto)}</span>'
+    return f'<span class="av">{esc(texto)}</span>'
+
+
+def activo(nombre, sub, av_txt, color=None):
+    return f'<div class="nm">{avatar(av_txt, color)}<div><b>{esc(nombre)}</b><span>{esc(sub)}</span></div></div>'
+
+
+def rsi_pill(v, lo=30, hi=70):
+    if v is None or v != v:
+        return '<span class="muted">-</span>'
+    cls, lab = ("p-buy", "SOBREVENTA") if v < lo else (("p-sell", "SOBRECOMPRA") if v > hi else ("p-neu", "NEUTRAL"))
+    ancho = max(3, min(100, v))
+    return (f'<div class="pill {cls}"><div class="pt"><span class="pl">{lab}</span><span class="pv">{v:.0f}</span></div>'
+            f'<div class="bar"><i style="width:{ancho:.0f}%"></i></div></div>')
+
+
+def tabla(headers, filas, sel=None):
+    """headers: lista de (texto, 'l'|'r'). filas: lista de listas de HTML de celda."""
+    th = "".join(f'<th class="{"r" if a == "r" else ""}">{esc(t)}</th>' for t, a in headers)
+    trs = ""
+    for i, f in enumerate(filas):
+        tds = "".join(f'<td class="{"r" if headers[j][1] == "r" else ""}">{c}</td>' for j, c in enumerate(f))
+        trs += f'<tr class="{"sel" if sel == i else ""}">{tds}</tr>'
+    return compactar(f'<div class="panel" style="overflow-x:auto"><table class="tbl"><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table></div>')
+
+
+def variacion_chip(pct):
+    if pct is None or pct != pct:
+        return ""
+    tipo = "up" if pct > 0.005 else ("down" if pct < -0.005 else "flat")
+    return f'<div class="panel-top"><span class="muted strong" style="margin-right:10px">Variación promedio</span>' \
+           f'{chip(num(abs(pct), 2, suf="%"), tipo, "↑" if pct > 0 else "↓")}</div>'
+
+
+def leyenda_rsi(lo=30, hi=70):
+    return (f'<div class="legend"><span><i style="background:{VERDE}"></i>Sobreventa (RSI &lt; {lo})</span>'
+            f'<span><i style="background:{GRIS}"></i>Neutral</span><span><i style="background:{ROJO}"></i>Sobrecompra (RSI &gt; {hi})</span></div>')
+
+
+def hint(texto_html, icono="✦"):
+    return compactar(f'<div class="hint"><div class="ic">{icono}</div><div>{texto_html}</div></div>')
+
+
+def area_svg(a, b=None, uid="a", w=380, h=150, c1="#E2704A", c2="#8C6FB3"):
+    """Área con la serie principal y una línea punteada de referencia."""
+    a = [float(x) for x in a]
+    todas = a + ([float(x) for x in b] if b else [])
+    lo, hi = min(todas + [0]), max(todas)
+    rng = (hi - lo) or 1.0
+    pad = 8
+
+    def pts(s):
+        return [(pad + i * (w - 2 * pad) / (len(s) - 1), h - pad - (x - lo) / rng * (h - 2 * pad)) for i, x in enumerate(s)]
+
+    pa = pts(a)
+    linea = " ".join(f"{x:.1f},{y:.1f}" for x, y in pa)
+    area = f"{pa[0][0]:.1f},{h - pad} " + linea + f" {pa[-1][0]:.1f},{h - pad}"
+    ref = ""
+    if b and len(b) == len(a):
+        ref = f'<polyline points="{" ".join(f"{x:.1f},{y:.1f}" for x, y in pts([float(x) for x in b]))}" fill="none" stroke="{c2}" stroke-width="2" stroke-dasharray="5 5" opacity=".8" vector-effect="non-scaling-stroke"/>'
+    return (f'<svg width="100%" height="{h}" viewBox="0 0 {w} {h}" preserveAspectRatio="none" style="display:block"><defs><linearGradient id="g{uid}" x1="0" y1="0" x2="0" y2="1">'
+            f'<stop offset="0" stop-color="{c1}" stop-opacity=".28"/><stop offset="1" stop-color="{c1}" stop-opacity="0"/></linearGradient></defs>'
+            f'<polygon points="{area}" fill="url(#g{uid})"/>{ref}<polyline points="{linea}" fill="none" stroke="{c1}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>')
+
+
+def detalle_fondo(nombre, sub, color, rescate, minimo, rend_txt, rend_pos, svg, leyenda=("Este fondo", "Referencia"), extra=None):
+    cls = "pos" if rend_pos else "neg"
+    extras = ""
+    if extra:
+        extras = '<div class="mini-row" style="margin-top:-6px">' + "".join(
+            f'<div class="mini"><small>{esc(a)}</small><div style="font-size:1.05rem">{esc(b)}</div></div>' for a, b in extra) + "</div>"
+    graf = ""
+    if svg:
+        graf = (f'<div class="row-sp" style="margin-top:6px"><span class="muted">Rendimiento acumulado</span><b class="{cls}">{esc(rend_txt)}</b></div>'
+                f'<div style="margin-top:10px">{svg}</div><div class="lg"><span><i style="background:#E2704A"></i>{esc(leyenda[0])}</span>'
+                f'<span><i style="background:#8C6FB3"></i>{esc(leyenda[1])}</span></div>')
+    return compactar(f'<div class="detail"><div class="row-sp"><span class="eyebrow">Seleccionado</span></div>'
+                     f'<div class="nm" style="margin-top:16px">{avatar(nombre[:1].upper(), color)}<div><b style="font-size:1.25rem;font-weight:500">{esc(nombre)}</b><span>{esc(sub)}</span></div></div>'
+                     f'<div class="mini-row"><div class="mini"><small>⏱ Rescate</small><div>{esc(rescate)}</div></div>'
+                     f'<div class="mini"><small>▣ Inversión mínima</small><div>{esc(minimo)}</div></div></div>{extras}{graf}</div>')
+
+
+def donut(items, centro_n, centro_txt, size=270, radio=92, grosor=36):
+    """items: lista de (etiqueta, porcentaje, color)."""
+    c = size / 2
+    circ = 2 * pi * radio
+    acc, arcos = 0.0, ""
+    for _, pct, col in items:
+        largo = max(0.0, pct / 100 * circ)
+        arcos += (f'<circle cx="{c}" cy="{c}" r="{radio}" fill="none" stroke="{col}" stroke-width="{grosor}" '
+                  f'stroke-dasharray="{max(largo - 2, 0):.2f} {circ - max(largo - 2, 0):.2f}" stroke-dashoffset="{-acc:.2f}" transform="rotate(-90 {c} {c})"/>')
+        acc += largo
+    return (f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}">{arcos}'
+            f'<text x="{c}" y="{c - 22}" text-anchor="middle" font-size="13" fill="#8A7A6C">Activos</text>'
+            f'<text x="{c}" y="{c + 22}" text-anchor="middle" font-size="46" font-weight="500" fill="#26221F">{esc(centro_n)}</text>'
+            f'<text x="{c}" y="{c + 44}" text-anchor="middle" font-size="13" fill="#8A7A6C">{esc(centro_txt)}</text></svg>')
+
+
+def composicion(titulo, descripcion, items, eyebrow="Composición de cartera", centro_txt="categorías"):
+    """items: lista de (etiqueta, porcentaje). Agrupa lo que pase de 5 en 'Otros activos'."""
+    items = sorted(items, key=lambda x: -x[1])
+    if len(items) > 6:
+        resto = sum(p for _, p in items[5:])
+        items = items[:5] + [("Otros activos", resto)]
+    colores = [PALETA[i % len(PALETA)] for i in range(len(items))]
+    dona = donut([(e, p, colores[i]) for i, (e, p) in enumerate(items)], len(items), centro_txt)
+    leg = "".join(f'<div class="leg-i"><span><i style="background:{colores[i]}"></i>{esc(e)}</span><b>{num(p, 0)}%</b></div>'
+                  for i, (e, p) in enumerate(items))
+    return compactar(f'<div class="comp"><div class="izq"><div class="eyebrow m">{esc(eyebrow)}</div><div class="h2">{esc(titulo)}</div>'
+                     f'<div class="sub">{esc(descripcion)}</div><div class="leg">{leg}</div></div><div>{dona}</div></div>')
+
+
+def tarjeta_oscura(etiqueta, valor, sub):
+    return compactar(f'<div class="dark"><small>{esc(etiqueta)}</small><div class="v">{esc(valor)}</div><div class="s">{esc(sub)}</div></div>')
+
+
+def barras(items, mejor, alto=190):
+    """items: lista de (etiqueta, valor, texto_sobre_barra). El mejor se resalta. Eje desde cero."""
+    mx = max(v for _, v, _ in items) or 1
+    cols, labs = "", ""
+    for i, (et, v, t) in enumerate(items):
+        h = max(4, v / mx * alto)
+        cls = "best" if i == mejor else ""
+        cols += f'<div class="bc {cls}"><div class="t">{esc(t) if i == mejor else ""}</div><div class="b" style="height:{h:.0f}px"></div></div>'
+        labs += f'<div class="{cls}">{esc(et)}</div>'
+    return compactar(f'<div class="bars">{cols}</div><div class="bl">{labs}</div>')
+
+
+def strip(celdas):
+    """celdas: lista de (etiqueta, valor, sub, resaltada)."""
+    cs = "".join(f'<div class="cell {"hl" if hl else ""}"><small>{esc(e)}</small><div class="v">{esc(v)}</div><small>{esc(s)}</small></div>'
+                 for e, v, s, hl in celdas)
+    return compactar(f'<div class="strip">{cs}</div>')
+
+
+def meses(items):
+    """items: lista de (mes, porcentaje, texto_valor)."""
+    mx = max((abs(p) for _, p, _ in items), default=1) or 1
+    cols = ""
+    for m, p, v in items:
+        h = max(6, abs(p) / mx * 120)
+        cls = "n" if p < 0 else ""
+        col = "neg" if p < 0 else "pos"
+        cols += (f'<div class="col"><small>{esc(m)}</small><div class="p {col}">{num(p, 2, suf="%", signo=True)}</div>'
+                 f'<div class="area"><div class="bb {cls}" style="height:{h:.0f}px"></div></div><div class="vv">{esc(v)}</div></div>')
+    return compactar(f'<div class="mm">{cols}</div>')
