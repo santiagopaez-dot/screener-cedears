@@ -44,37 +44,33 @@ header[data-testid="stHeader"]{background:transparent}
 .block-container{max-width:1300px;padding-top:2.4rem;padding-bottom:4rem}
 h1,h2,h3{letter-spacing:-0.02em;font-weight:500}
 /* pestañas */
-[data-baseweb="tab-list"]{gap:4px !important;background:#EFEAE2;padding:6px !important;border-radius:18px;width:fit-content;max-width:100%;overflow-x:auto}
-[data-baseweb="tab"]{border-radius:13px !important;padding:9px 18px !important;height:auto !important;font-weight:500;color:var(--suave)}
-[data-baseweb="tab"][aria-selected="true"]{background:var(--dark) !important;box-shadow:0 4px 14px rgba(42,36,32,.25)}
-[data-baseweb="tab"][aria-selected="true"],[data-baseweb="tab"][aria-selected="true"] *{color:#fff !important}
-[data-baseweb="tab-highlight"],[data-baseweb="tab-border"]{display:none !important}
-/* control segmentado */
-[data-testid="stButtonGroup"]{background:#EFEAE2;padding:6px;border-radius:18px;width:fit-content;max-width:100%;gap:4px}
-[data-testid="stButtonGroup"] button{border:0 !important;border-radius:13px !important;padding:10px 20px;background:transparent !important;color:var(--suave);font-weight:500}
-[data-testid="stButtonGroup"] button[kind$="Active"],[data-testid="stButtonGroup"] button[data-testid$="Active"],
-[data-testid="stButtonGroup"] button[aria-checked="true"],[data-testid="stButtonGroup"] button[aria-pressed="true"]{background:var(--dark) !important;color:#fff !important;box-shadow:0 4px 14px rgba(42,36,32,.25)}
-[data-testid="stButtonGroup"] button[kind$="Active"] *,[data-testid="stButtonGroup"] button[data-testid$="Active"] *,
-[data-testid="stButtonGroup"] button[aria-checked="true"] *,[data-testid="stButtonGroup"] button[aria-pressed="true"] *{color:#fff !important}
-/* entradas */
-[data-baseweb="input"],[data-baseweb="select"]>div,[data-baseweb="textarea"]{background-color:var(--card) !important;border:1px solid var(--borde) !important;border-radius:15px !important}
-[data-baseweb="input"] [data-baseweb="base-input"]{background:transparent !important;border:0 !important}
-[data-baseweb="input"] input,[data-baseweb="base-input"] input,[data-baseweb="textarea"] textarea{background:transparent !important;font-weight:500}
-[data-testid="stSlider"] [role="slider"]{background-color:#6A4FA0 !important;border-color:#6A4FA0 !important}
-[data-testid="stSliderThumbValue"]{color:#6A4FA0 !important}
-[data-testid="stForm"]{background:var(--card);border:1px solid var(--borde) !important;border-radius:26px;padding:26px 28px;box-shadow:0 10px 30px rgba(60,40,20,.07)}
-.stButton>button,.stDownloadButton>button,[data-testid="stPopover"]>button{border-radius:14px;border:1px solid var(--borde);background:var(--card);font-weight:500;padding:.55rem 1.1rem}
+.stApp [data-baseweb="tab-list"]{gap:4px !important;background:#E9E3D8;padding:6px !important;border-radius:18px;width:fit-content;max-width:100%;overflow-x:auto}
+.stApp [data-baseweb="tab"]{border-radius:13px !important;padding:9px 18px !important;height:auto !important;font-weight:500;color:var(--suave)}
+.stApp [data-baseweb="tab"][aria-selected="true"]{background:var(--dark) !important;box-shadow:0 4px 14px rgba(42,36,32,.25)}
+.stApp [data-baseweb="tab"][aria-selected="true"],.stApp [data-baseweb="tab"][aria-selected="true"] *{color:#fff !important}
+.stApp [data-baseweb="tab-highlight"],.stApp [data-baseweb="tab-border"]{display:none !important}
+/* El rojo de fábrica de Streamlit se rota a violeta (#6B4F9F): no depende de la estructura interna de cada control */
+.stApp [data-testid="stSlider"],.stApp [data-testid="stToggle"],.stApp [data-testid="stCheckbox"],
+.stApp [data-testid="stButtonGroup"] button{filter:hue-rotate(268deg) saturate(.6) brightness(.8)}
+[data-testid="stButtonGroup"]{background:#E9E3D8;padding:6px;border-radius:18px;width:fit-content;max-width:100%;gap:4px}
+[data-testid="stButtonGroup"] button{border:0;border-radius:13px;padding:10px 20px;font-weight:500}
+/* campos con fondo propio (antes se confundían con el de la página) */
+.stApp [data-baseweb="input"],.stApp [data-baseweb="select"]>div,.stApp [data-baseweb="textarea"],.stApp div:has(>div>input){background-color:#FFFFFF !important;border:1px solid #D6CBBA !important;border-radius:14px !important}
+.stApp [data-baseweb="base-input"],.stApp div:has(>input){background-color:transparent !important;border:0 !important}
+.stApp [data-baseweb="input"]:focus-within,.stApp [data-baseweb="select"]>div:focus-within{border-color:#6A4FA0 !important}
+.stApp [data-baseweb="input"] input,.stApp [data-baseweb="textarea"] textarea{font-weight:500}
+.stApp [data-testid="stForm"]{background:#fff;border:1px solid #D9CFC0 !important;border-radius:26px;padding:26px 28px;box-shadow:0 10px 30px rgba(60,40,20,.08)}
+.stButton>button,.stDownloadButton>button,[data-testid="stPopover"]>button{border-radius:14px;border:1px solid #D6CBBA;background:#fff;font-weight:500;padding:.55rem 1.1rem}
 .stFormSubmitButton>button,.stButton>button[kind="primary"]{background:var(--dark) !important;color:#fff !important;border-color:var(--dark) !important}
-[data-testid="stExpander"]{background:var(--card);border:1px solid var(--borde);border-radius:24px;overflow:hidden;margin-bottom:14px}
-[data-testid="stExpander"] summary{padding:18px 24px;background:linear-gradient(90deg,#EEF0FA,#F7F4EE);font-size:1.15rem;font-weight:600}
+[data-testid="stExpander"]{background:#fff;border:1px solid #D9CFC0;border-radius:22px;overflow:hidden;margin-bottom:14px;box-shadow:0 4px 18px rgba(60,40,20,.06)}
+[data-testid="stExpander"] summary{padding:16px 22px;background:linear-gradient(90deg,#E6E0F3,#F4F0FA);font-size:1.08rem;font-weight:600;color:#3B2C66}
 [data-testid="stExpander"] details>div{padding:0}
 [data-testid="stAlert"]{border-radius:18px}
 [data-testid="stExpander"] .panel{border:0;border-radius:0;box-shadow:none}
-[data-testid="stDataFrame"]{border:1px solid var(--borde);border-radius:18px;overflow:hidden}
-[data-testid="stMetric"]{background:var(--card);border:1px solid var(--borde);border-radius:20px;padding:14px 18px}
-[class*="st-key-card"]{background:var(--card);border:1px solid var(--borde);border-radius:26px;padding:20px 22px}
+[data-testid="stDataFrame"]{border:1px solid #D9CFC0;border-radius:18px;overflow:hidden}
+[data-testid="stMetric"]{background:#fff;border:1px solid #D9CFC0;border-radius:20px;padding:14px 18px}
+[class*="st-key-card"]{background:#fff;border:1px solid #D9CFC0;border-radius:26px;padding:20px 24px;box-shadow:0 6px 24px rgba(60,40,20,.05)}
 [class*="st-key-grandes"] input{font-size:1.7rem;font-weight:500;padding:.55rem .8rem}
-[class*="st-key-grandes"] [data-baseweb="input"]{border-radius:20px !important}
 /* textos */
 .eyebrow{font-size:.74rem;letter-spacing:.16em;text-transform:uppercase;color:#3B4F8F;font-weight:500}
 .eyebrow.m{color:#8A7A6C}
@@ -103,7 +99,11 @@ h1,h2,h3{letter-spacing:-0.02em;font-weight:500}
 .tbl{width:100%;border-collapse:collapse}
 .tbl th{font-size:.7rem;letter-spacing:.13em;text-transform:uppercase;color:#4B5568;text-align:left;padding:16px 18px;background:#F4F5F9;font-weight:600;white-space:nowrap}
 .tbl td{white-space:nowrap;padding:15px 18px;border-top:1px solid #EFEAE1;vertical-align:middle;font-size:.98rem}
-.tbl tr:hover td{background:#FAF8F3}
+.tbl tr:hover td{background:#FAF8F3}.tbl tr.clk{cursor:pointer}
+.tbl.cmp th{font-size:.62rem;letter-spacing:.06em;padding:12px 7px;white-space:normal;line-height:1.25}
+.tbl.cmp td{padding:10px 7px;font-size:.84rem;white-space:normal}
+.tbl.cmp .nm{gap:9px;padding-right:6px}.tbl.cmp .nm b{font-size:.9rem}.tbl.cmp .nm span{font-size:.74rem}
+.tbl.cmp .av{width:34px;height:34px;border-radius:11px;font-size:.78rem}.tbl.cmp .chip{padding:3px 8px;font-size:.72rem}
 .tbl td.r,.tbl th.r{text-align:right}.tbl td.w{white-space:normal;min-width:260px;color:var(--suave);font-size:.92rem}
 .tbl tr.sel td{background:#F1ECFA}.tbl tr.sel td:first-child{box-shadow:inset 4px 0 0 #6A4FA0}
 .nm{display:flex;gap:14px;align-items:center;padding-right:14px}
@@ -167,6 +167,11 @@ h1,h2,h3{letter-spacing:-0.02em;font-weight:500}
 """
 
 
+def css_texto():
+    """CSS sin la etiqueta <style> (para el componente de tabla clicable)."""
+    return CSS.replace("__FUENTE__", FUENTE_URL)
+
+
 def css():
     return "<style>" + CSS.replace("__FUENTE__", FUENTE_URL) + "</style>"
 
@@ -224,14 +229,17 @@ def rsi_pill(v, lo=30, hi=70):
             f'<div class="bar"><i style="width:{ancho:.0f}%"></i></div></div>')
 
 
-def tabla(headers, filas, sel=None):
-    """headers: lista de (texto, 'l'|'r'). filas: lista de listas de HTML de celda."""
+def tabla(headers, filas, sel=None, compacta=False, ids=None):
+    """headers: lista de (texto, 'l'|'r'|'w'). filas: lista de listas de HTML de celda.
+    compacta: letra y espacios más chicos. ids: un identificador por fila (para tablas clicables)."""
     th = "".join(f'<th class="{a if a in ("r", "w") else ""}">{esc(t)}</th>' for t, a in headers)
     trs = ""
     for i, f in enumerate(filas):
         tds = "".join(f'<td class="{headers[j][1] if headers[j][1] in ("r", "w") else ""}">{c}</td>' for j, c in enumerate(f))
-        trs += f'<tr class="{"sel" if sel == i else ""}">{tds}</tr>'
-    return compactar(f'<div class="panel" style="overflow-x:auto"><table class="tbl"><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table></div>')
+        clase = ("sel" if sel == i else "") + (" clk" if ids else "")
+        attr = f' data-id="{esc(ids[i])}"' if ids else ""
+        trs += f'<tr class="{clase.strip()}"{attr}>{tds}</tr>'
+    return compactar(f'<div class="panel" style="overflow-x:auto"><table class="tbl{" cmp" if compacta else ""}"><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table></div>')
 
 
 def variacion_chip(pct):
@@ -306,18 +314,29 @@ def donut(items, centro_n, centro_txt, size=270, radio=92, grosor=36):
             f'<text x="{c}" y="{c + 44}" text-anchor="middle" font-size="13" fill="#8A7A6C">{esc(centro_txt)}</text></svg>')
 
 
-def composicion(titulo, descripcion, items, eyebrow="Composición de cartera", centro_txt="categorías"):
-    """items: lista de (etiqueta, porcentaje). Agrupa lo que pase de 5 en 'Otros activos'."""
+def composicion_datos(items, max_items=6):
+    """Ordena, agrupa lo que pase de 5 en 'Otros activos' y asigna colores. items: lista de (etiqueta, porcentaje)."""
     items = sorted(items, key=lambda x: -x[1])
-    if len(items) > 6:
-        resto = sum(p for _, p in items[5:])
-        items = items[:5] + [("Otros activos", resto)]
-    colores = [PALETA[i % len(PALETA)] for i in range(len(items))]
+    if len(items) > max_items:
+        items = items[:max_items - 1] + [("Otros activos", sum(p for _, p in items[max_items - 1:]))]
+    return items, [PALETA[i % len(PALETA)] for i in range(len(items))]
+
+
+def leyenda_comp(items, colores):
+    return "".join(f'<div class="leg-i"><span><i style="background:{colores[i]}"></i>{esc(e)}</span><b>{num(p, 0)}%</b></div>'
+                   for i, (e, p) in enumerate(items))
+
+
+def composicion_texto(titulo, descripcion, items, colores, eyebrow="Composición de cartera"):
+    return compactar(f'<div class="eyebrow m">{esc(eyebrow)}</div><div class="h2">{esc(titulo)}</div>'
+                     f'<div class="sub">{esc(descripcion)}</div><div class="leg">{leyenda_comp(items, colores)}</div>')
+
+
+def composicion(titulo, descripcion, items, eyebrow="Composición de cartera", centro_txt="categorías"):
+    items, colores = composicion_datos(items)
     dona = donut([(e, p, colores[i]) for i, (e, p) in enumerate(items)], len(items), centro_txt)
-    leg = "".join(f'<div class="leg-i"><span><i style="background:{colores[i]}"></i>{esc(e)}</span><b>{num(p, 0)}%</b></div>'
-                  for i, (e, p) in enumerate(items))
-    return compactar(f'<div class="comp"><div class="izq"><div class="eyebrow m">{esc(eyebrow)}</div><div class="h2">{esc(titulo)}</div>'
-                     f'<div class="sub">{esc(descripcion)}</div><div class="leg">{leg}</div></div><div class="dona">{dona}</div></div>')
+    return compactar(f'<div class="comp"><div class="izq">{composicion_texto(titulo, descripcion, items, colores, eyebrow)}</div>'
+                     f'<div class="dona">{dona}</div></div>')
 
 
 def tarjeta_oscura(etiqueta, valor, sub):

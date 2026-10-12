@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style id="css-app"></style>
+<style>html,body{margin:0;background:transparent}#raiz{padding:6px 4px 10px}</style>
+</head>
+<body>
+<div id="raiz"></div>
+<script>
+// Componente mínimo de Streamlit: dibuja una tabla HTML y devuelve el id de la fila donde se hace clic.
+function enviar(tipo, extra) {
+  window.parent.postMessage(Object.assign({isStreamlitMessage: true, type: tipo}, extra || {}), "*");
+}
+function ajustarAltura() {
+  enviar("streamlit:setFrameHeight", {height: document.documentElement.scrollHeight});
+}
+var seleccionada = null;
+function marcar() {
+  document.querySelectorAll("tr[data-id]").forEach(function (tr) {
+    tr.classList.toggle("sel", tr.getAttribute("data-id") === seleccionada);
+  });
+}
+function dibujar(args) {
+  document.getElementById("css-app").textContent = args.css || "";
+  document.getElementById("raiz").innerHTML = args.html || "";
+  seleccionada = args.selected;
+  marcar();
+  document.querySelectorAll("tr[data-id]").forEach(function (tr) {
+    tr.addEventListener("click", function () {
+      seleccionada = tr.getAttribute("data-id");
+      marcar();
+      enviar("streamlit:setComponentValue", {value: seleccionada, dataType: "json"});
+    });
+  });
+  ajustarAltura();
+  setTimeout(ajustarAltura, 150);
+  setTimeout(ajustarAltura, 600);
+}
+window.addEventListener("message", function (ev) {
+  if (ev.data && ev.data.type === "streamlit:render") { dibujar(ev.data.args || {}); }
+});
+window.addEventListener("resize", ajustarAltura);
+enviar("streamlit:componentReady", {apiVersion: 1});
+</script>
+</body>
+</html>

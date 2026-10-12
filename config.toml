@@ -1,9 +1,9 @@
+# Opcional. No define primaryColor a propósito: el violeta de los controles se aplica desde el CSS de la app.
 [theme]
 base = "light"
-primaryColor = "#6A4FA0"
 backgroundColor = "#F5F2EC"
-secondaryBackgroundColor = "#FFFEFA"
+secondaryBackgroundColor = "#FFFFFF"
 textColor = "#26221F"
-borderColor = "#EAE3D8"
+borderColor = "#D6CBBA"
 baseRadius = "large"
 showWidgetBorder = true

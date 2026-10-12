@@ -6,6 +6,7 @@ import re
 import json
 import altair as alt
 import estilo as E
+import streamlit.components.v1 as components
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import unicodedata
@@ -205,6 +206,10 @@ def fundamentales(tickers):
     return df.reindex(columns=["Sector", "P/E", "P/E futuro", "P/B", "ROE %", "Deuda/EBITDA"])
 
 
+_COMP_DIR = Path(__file__).parent / "componentes" / "tabla_click"
+# Tabla con filas clicables (si falta la carpeta del componente, el ranking usa un desplegable)
+tabla_click = components.declare_component("tabla_click", path=str(_COMP_DIR)) if (_COMP_DIR / "index.html").exists() else None
+
 API = "https://api.argentinadatos.com/v1/finanzas"
 TIPOS_FCI = {"Mercado de dinero": "mercadoDinero", "Renta fija": "rentaFija",
              "Renta variable": "rentaVariable", "Renta mixta": "rentaMixta"}
@@ -315,8 +320,8 @@ def detalle_completo(f):
     else:
         pc = comp["porcentaje"].astype(float)
         pc = pc * 100 if pc.sum() <= 1.5 else pc
-        H(E.composicion("¿Dónde está invertido tu dinero?", "Distribución de la cartera del fondo según lo informado a la CNV.",
-                              list(zip(comp["nombre"].astype(str), pc)), centro_txt="instrumentos"))
+        composicion_st("¿Dónde está invertido tu dinero?", "Distribución de la cartera del fondo según lo informado a la CNV.",
+                       list(zip(comp["nombre"].astype(str), pc)), "Composición de cartera", "card_comp_fci")
     hon = {k: v for k, v in (f.get("honorarios") or {}).items() if v}
     if hon:
         filas = [[f'<span class="strong">{E.esc(COMISIONES.get(k, (k, ""))[0])}</span>', E.chip(f"{v:g}%", "pur"),
@@ -341,6 +346,27 @@ def serie_fondo(tipo, nombre, ini, fin, n=10):
         fila = df[df["fondo"] == nombre] if len(df) else df
         vals.append(float(fila["vcp"].iloc[0]) if len(fila) else np.nan)
     return list(fechas), vals
+
+
+def torta_alt(items, colores, alto=260):
+    """Gráfico de torta (dona) nativo de Streamlit, con la cantidad de posiciones en el centro."""
+    d = pd.DataFrame({"Activo": [i[0] for i in items], "Valor": [float(i[1]) for i in items], "Color": colores})
+    arco = alt.Chart(d).mark_arc(innerRadius=0.58 * alto / 2, outerRadius=alto / 2 - 6, stroke="#FFFEFA", strokeWidth=2).encode(
+        theta=alt.Theta("Valor:Q", stack=True),
+        color=alt.Color("Activo:N", scale=alt.Scale(domain=list(d["Activo"]), range=colores), legend=None),
+        tooltip=["Activo", alt.Tooltip("Valor:Q", format=".1f", title="%")])
+    centro = alt.Chart(pd.DataFrame({"t": [str(len(d))]})).mark_text(size=40, color="#26221F", dy=-4).encode(text="t:N")
+    chico = alt.Chart(pd.DataFrame({"t": ["posiciones"]})).mark_text(size=12, color="#8A7A6C", dy=24).encode(text="t:N")
+    return (arco + centro + chico).properties(height=alto, width=alto).configure_view(strokeWidth=0)
+
+
+def composicion_st(titulo, descripcion, items, eyebrow, key):
+    """Tarjeta con la leyenda a la izquierda y la torta a la derecha."""
+    items, colores = E.composicion_datos(items)
+    with st.container(key=key):
+        c1, c2 = st.columns([1.5, 1], vertical_alignment="center")
+        c1.html(NT(E.composicion_texto(titulo, descripcion, items, colores, eyebrow)))
+        c2.altair_chart(torta_alt(items, colores), width="content")
 
 
 def alternar_fav(nombre):
@@ -820,7 +846,7 @@ def chip_veredicto(t):
 def barra_rango(p):
     if pd.isna(p):
         return "-"
-    return (f'<div style="display:flex;align-items:center;gap:9px"><div class="bar" style="width:84px;margin:0;background:#E7E0D5">'
+    return (f'<div style="display:flex;align-items:center;gap:7px"><div class="bar" style="width:50px;margin:0;background:#E7E0D5">'
             f'<i style="width:{max(2, min(100, p)):.0f}%;background:#8C6FB3"></i></div><span>{p:.0f}%</span></div>')
 
 
@@ -929,8 +955,9 @@ with tab2:
                       E.num(r["P/E vs sector"], 2, suf="x"), chip_roe(r["ROE %"]), chip_deuda(r["Deuda/EBITDA"]),
                       barra_rango(r["Posición rango 52 sem. %"]), chip_veredicto(r["Veredicto"])]
                      for tk, r in sub.iterrows()]
-            H(E.tabla([("Activo", "l"), ("Precio USD", "l"), ("Dividendo 12m", "l"), ("Yield 12m", "l"), ("P/E", "l"),
-                             ("P/E vs sector", "l"), ("ROE", "l"), ("Deuda/EBITDA", "l"), ("Rango 52 sem.", "l"), ("¿Cara o barata?", "l")], filas))
+            H(E.tabla([("Activo", "l"), ("Precio USD", "l"), ("Div. 12m", "l"), ("Yield 12m", "l"), ("P/E", "l"),
+                             ("P/E vs sector", "l"), ("ROE", "l"), ("Deuda / EBITDA", "l"), ("Rango 52 sem.", "l"), ("Valuación", "l")],
+                           filas, compacta=True))
     st.markdown(
         "**Yield:** gris no paga · rojo <1,5% · amarillo 1,5–3% · verde 3–6% · naranja ≥6% (revisar por qué es tan alto). "
         "Es bruto, sobre la acción en NY; el CEDEAR cobra en pesos y con retención en origen.  \n"
@@ -975,6 +1002,7 @@ with tab3:
     else:
         r = r[r["Patrimonio (M)"] >= min_pat].sort_values("Rend. período %", ascending=False).copy()
         r["eq_tna"] = tna30_de_tea(r["TEA %"])
+        r["tna_d"] = ((1 + r["TEA %"] / 100) ** (1 / 365) - 1) * 365 * 100
         tea_ref = None
         try:
             serie = serie_deposito_30d()
@@ -1019,10 +1047,39 @@ with tab3:
             st.info("Ningún fondo cumple los filtros elegidos." if not modo_infl else
                     "Ningún fondo de esta categoría supera la inflación esperada con el rendimiento del período elegido.")
         else:
-            izq, der = st.columns([2.3, 1.05], gap="large")
+            izq, der = st.columns([2.6, 1], gap="medium")
+            nombres = list(top["fondo"])
+            filas = []
+            for _, x in top.iterrows():
+                rc = "pos" if x["Rend. período %"] >= 0 else "neg"
+                filas.append([
+                    E.activo(x["base"], x["sub"], x["base"][:1].upper(), E.color_de(x["base"])),
+                    f'<span class="{rc} strong">{"↑" if x["Rend. período %"] >= 0 else "↓"} {E.num(abs(x["Rend. período %"]), 2, suf="%")}</span>',
+                    f'<span class="strong">{E.num(x["TEA %"], 2, suf="%")}</span>',
+                    E.chip(E.num(x["vs_infl"], 2, suf="%", signo=True), "up" if x["vs_infl"] > 0 else "down"),
+                    E.chip(E.num(x["vs_ref"], 2, suf=" p.p.", signo=True), "up" if x["vs_ref"] > 0 else "down") if x["vs_ref"] == x["vs_ref"] else "-",
+                    E.num(x["Patrimonio (M)"], 0, "$ ", " M"),
+                ])
+            cols_tab = [("Fondo", "l"), (f"Rend. {dias} días", "l"), ("TEA", "l"), ("Vs. inflación", "l"), ("Vs. plazo fijo", "l"), ("Patrimonio", "r")]
+            sel = st.session_state.get("fci_sel_id")
+            if sel not in nombres:
+                sel = nombres[0]
+            with izq:
+                H(f'<div class="panel-top" style="padding:6px 4px 10px"><div><div class="eyebrow m">Ranking actualizado</div>'
+                  f'<div class="h2" style="font-size:1.9rem;margin:2px 0 0">Fondos que mejor encajan</div>'
+                  f'<div class="sub" style="font-size:.88rem">Hacé clic en un fondo para ver su detalle.</div></div>'
+                  f'<span class="chip ch-flat" style="font-size:.85rem">{len(r)} resultados</span></div>')
+                if tabla_click:
+                    clic = tabla_click(html=E.tabla(cols_tab, filas, compacta=True, ids=nombres), css=E.css_texto(),
+                                       selected=sel, key="fci_tabla", default=None)
+                    if clic in nombres:
+                        sel = clic
+                else:
+                    sel = st.selectbox("Fondo seleccionado", nombres, index=nombres.index(sel),
+                                       format_func=lambda n: top.loc[top["fondo"] == n, "base"].iloc[0])
+                    H(E.tabla(cols_tab, filas, sel=nombres.index(sel), compacta=True))
+                st.session_state["fci_sel_id"] = sel
             with der:
-                nombres = list(top["fondo"])
-                sel = st.selectbox("Fondo seleccionado", nombres, format_func=lambda n: top.loc[top["fondo"] == n, "base"].iloc[0])
                 fila = top[top["fondo"] == sel].iloc[0]
                 st.button("★ Quitar de mis seleccionados" if sel in favs else "☆ Agregar a mis seleccionados",
                           key="fci_fav", on_click=alternar_fav, args=(sel,))
@@ -1043,30 +1100,16 @@ with tab3:
                         svg = E.area_svg(acum, ref, uid="fci")
                 except Exception:
                     pass
-                extra = [("Equiv. TNA plazo fijo 30d", E.num(fila["eq_tna"], 1, suf="%"))]
+                extra = [("TNA del fondo (cap. diaria)", E.num(fila["tna_d"], 1, suf="%")),
+                         ("Plazo fijo equivalente (cap. cada 30 días)", E.num(fila["eq_tna"], 1, suf="%"))]
                 if fila["usd"] == fila["usd"]:
                     extra.append((f"En USD (MEP), {dias} días", E.num(fila["usd"], 1, suf="%", signo=True)))
                 H(E.detalle_fondo(fila["base"], fila["sub"].strip(), E.color_de(fila["base"]), resc, minimo,
-                                        E.num(fila["Rend. período %"], 1, suf="%", signo=True), fila["Rend. período %"] >= 0, svg,
-                                        leyenda=("Este fondo", "Depósitos a 30 días" if tea_ref is not None else "Referencia"), extra=extra))
+                                  E.num(fila["Rend. período %"], 1, suf="%", signo=True), fila["Rend. período %"] >= 0, svg,
+                                  leyenda=("Este fondo", "Depósitos a 30 días" if tea_ref is not None else "Referencia"), extra=extra))
+                st.caption("Un fondo capitaliza **todos los días** y un plazo fijo cada 30 días: para igualar el mismo rendimiento, el plazo fijo "
+                           "necesita una TNA **mayor** que la TNA diaria del fondo. Por eso la comparación se hace sobre la TEA.")
                 ver = st.toggle("Ver detalle completo", key="fci_ver")
-            with izq:
-                filas = []
-                for _, x in top.iterrows():
-                    rc = "pos" if x["Rend. período %"] >= 0 else "neg"
-                    filas.append([
-                        E.activo(x["base"], x["sub"], x["base"][:1].upper(), E.color_de(x["base"])),
-                        f'<span class="{rc} strong">{"↑" if x["Rend. período %"] >= 0 else "↓"} {E.num(abs(x["Rend. período %"]), 2, suf="%")}</span>',
-                        f'<span class="strong">{E.num(x["TEA %"], 2, suf="%")}</span>',
-                        E.chip(E.num(x["vs_infl"], 2, suf="%", signo=True), "up" if x["vs_infl"] > 0 else "down"),
-                        E.chip(E.num(x["vs_ref"], 2, suf=" p.p.", signo=True), "up" if x["vs_ref"] > 0 else "down") if x["vs_ref"] == x["vs_ref"] else "-",
-                        E.num(x["Patrimonio (M)"], 0, "$ ", " M"),
-                    ])
-                H(f'<div class="panel-top" style="padding:6px 4px 14px"><div><div class="eyebrow m">Ranking actualizado</div>'
-                        f'<div class="h2" style="font-size:1.9rem;margin:2px 0 0">Fondos que mejor encajan</div></div>'
-                        f'<span class="chip ch-flat" style="font-size:.85rem">{len(r)} resultados</span></div>'
-                        + E.tabla([("Fondo", "l"), (f"Rend. {dias} días", "l"), ("TEA", "l"), ("Vs. inflación", "l"),
-                                   ("Vs. plazo fijo", "l"), ("Patrimonio", "r")], filas, sel=nombres.index(sel)))
             if ver and fd:
                 detalle_completo(fd)
             elif ver:
@@ -1102,14 +1145,7 @@ with tab4:
                 '<div class="sub" style="max-width:600px">Ajustá los valores y compará cuánto puede crecer tu dinero según la frecuencia con la que se '
                 'reinvierten los intereses.</div></div>')
 
-    L, R = st.columns([1, 1.45], gap="large")
-    with L:
-        barras = E.barras([(f[1], g, E.num(f[2], 1, suf="%")) for f, g in zip(filas, gan)], None)
-        H(f'<div class="panel" style="padding:24px"><div class="row-sp"><div><small class="muted">Ganancia por frecuencia de capitalización</small>'
-                f'<div class="sub" style="margin-top:4px;max-width:340px;font-size:.9rem">Con la misma tasa, cuánto ganás en {plazo} días según '
-                f'cuántas veces se reinvierten los intereses. Sobre cada barra, su TEA.</div></div><span class="pillb">{plazo} días</span></div>{barras}'
-                f'<div style="margin-top:16px;padding-top:12px;border-top:1px dashed #D9D0C3;font-size:.82rem" class="muted">'
-                f'Inflación acumulada estimada: <b style="color:#6A4FA0">{E.num(inflacion * 100, 1, suf="%")}</b></div></div>')
+    R = st.container()
     with R:
         rows = []
         for i, f in enumerate(filas):
@@ -1119,7 +1155,7 @@ with tab4:
                          E.chip(E.num(real[i], 2, suf="%", signo=True), "up" if real[i] >= 0 else "down")])
         H('<div class="eyebrow m" style="margin:2px 0 8px">Comparativa completa</div>' + E.tabla(
             [("Frecuencia", "l"), ("TEA", "l"), ("Capital final", "l"), ("Ganancia", "l"), ("Rend. real", "l")], rows))
-    st.caption("TEA = (1 + TNA/m)^m − 1. Con 30% de TNA: mensual ≈ 34,5% de TEA, diaria ≈ 35,0%. Rend. real descuenta la inflación acumulada "
+    st.caption(f"Inflación acumulada estimada en {plazo} días: {E.num(inflacion * 100, 1, suf='%')}. TEA = (1 + TNA/m)^m − 1. Con 30% de TNA: mensual ≈ 34,5% de TEA, diaria ≈ 35,0%. Rend. real descuenta la inflación acumulada "
                "estimada. Con plazos que no son múltiplos exactos del período, es una aproximación.")
 
 # --- 5. Renta fija ----------------------------------------------------------
@@ -1476,8 +1512,8 @@ with tab6:
             ten["% de la cartera"] = ten["Valor USD"] / ten["Valor USD"].sum() * 100
             ten.index.name = "Activo"
             items = [(i, float(p)) for i, p in ten["% de la cartera"].items() if p > 0.05]
-            H(E.composicion("¿Qué tenés hoy?", f"Tenencia al {res.index[-1]:%d/%m/%Y}: el resultado de aplicar todos los movimientos del historial.",
-                                  items, eyebrow="Tenencia actual", centro_txt="posiciones"))
+            composicion_st("¿Qué tenés hoy?", f"Tenencia al {res.index[-1]:%d/%m/%Y}: el resultado de aplicar todos los movimientos del historial.",
+                           items, "Tenencia actual", "card_comp_cartera")
             with st.expander("Ver la tenencia en detalle"):
                 st.dataframe(ten.style.format(precision=2, na_rep="-"), width="stretch")
 
