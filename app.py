@@ -35,31 +35,109 @@ st.html("<script>(function(){var d=document.documentElement;d.setAttribute('lang
         "document.head.appendChild(m);}})();</script>", unsafe_allow_javascript=True)
 H(E.hero("Panel de inversiones", "CEDEARs, FCI y renta fija", "Información simple para tomar decisiones con más contexto."))
 
-# Lista de ejemplo: confirmá en BYMA / tu broker cuáles tienen CEDEAR vigente.
-# ticker: (nombre, sector)
+# Lista amplia de empresas con CEDEAR vigente en BYMA (confirmá siempre contra tu broker,
+# BYMA agrega y quita programas seguido). Se filtran por volumen mínimo más abajo, así que
+# tener más tickers acá no ensucia el panel: los que no operan quedan afuera solos.
+# ticker en Nueva York: (nombre, sector)
 INFO = {
+    # Tecnología
     "AAPL": ("Apple", "Tecnología"), "MSFT": ("Microsoft", "Tecnología"),
     "NVDA": ("NVIDIA", "Tecnología"), "AMD": ("AMD", "Tecnología"),
     "PLTR": ("Palantir", "Tecnología"), "INTC": ("Intel", "Tecnología"),
+    "CRM": ("Salesforce", "Tecnología"), "ORCL": ("Oracle", "Tecnología"),
+    "ADBE": ("Adobe", "Tecnología"), "IBM": ("IBM", "Tecnología"),
+    "CSCO": ("Cisco", "Tecnología"), "QCOM": ("Qualcomm", "Tecnología"),
+    "TXN": ("Texas Instruments", "Tecnología"), "MU": ("Micron", "Tecnología"),
+    "AVGO": ("Broadcom", "Tecnología"), "NOW": ("ServiceNow", "Tecnología"),
+    "UBER": ("Uber", "Tecnología"), "SNAP": ("Snap", "Tecnología"),
+    "SHOP": ("Shopify", "Tecnología"), "SPOT": ("Spotify", "Tecnología"),
+    "ABNB": ("Airbnb", "Tecnología"), "DELL": ("Dell", "Tecnología"),
+    "HPQ": ("HP", "Tecnología"), "ARM": ("Arm Holdings", "Tecnología"),
+    "SMCI": ("Super Micro Computer", "Tecnología"), "SQ": ("Block (Square)", "Tecnología"),
+    "RBLX": ("Roblox", "Tecnología"), "ZM": ("Zoom", "Tecnología"),
+    # Comunicación
     "GOOGL": ("Alphabet (Google)", "Comunicación"), "META": ("Meta Platforms", "Comunicación"),
     "NFLX": ("Netflix", "Comunicación"), "DIS": ("Walt Disney", "Comunicación"),
-    "VZ": ("Verizon", "Comunicación"),
+    "VZ": ("Verizon", "Comunicación"), "T": ("AT&T", "Comunicación"),
+    "CMCSA": ("Comcast", "Comunicación"), "WBD": ("Warner Bros Discovery", "Comunicación"),
+    # Consumo discrecional
     "AMZN": ("Amazon", "Consumo discrecional"), "TSLA": ("Tesla", "Consumo discrecional"),
     "MELI": ("MercadoLibre", "Consumo discrecional"), "MCD": ("McDonald's", "Consumo discrecional"),
     "BABA": ("Alibaba", "Consumo discrecional"), "NKE": ("Nike", "Consumo discrecional"),
+    "SBUX": ("Starbucks", "Consumo discrecional"), "HD": ("Home Depot", "Consumo discrecional"),
+    "LOW": ("Lowe's", "Consumo discrecional"), "TGT": ("Target", "Consumo discrecional"),
+    "F": ("Ford", "Consumo discrecional"), "GM": ("General Motors", "Consumo discrecional"),
+    "RIVN": ("Rivian", "Consumo discrecional"), "LVS": ("Las Vegas Sands", "Consumo discrecional"),
+    "YUM": ("Yum! Brands", "Consumo discrecional"), "EBAY": ("eBay", "Consumo discrecional"),
+    "RACE": ("Ferrari", "Consumo discrecional"), "DASH": ("DoorDash", "Consumo discrecional"),
+    # Consumo básico
     "KO": ("Coca-Cola", "Consumo básico"), "PEP": ("PepsiCo", "Consumo básico"),
-    "WMT": ("Walmart", "Consumo básico"),
+    "WMT": ("Walmart", "Consumo básico"), "PG": ("Procter & Gamble", "Consumo básico"),
+    "PM": ("Philip Morris", "Consumo básico"), "MO": ("Altria", "Consumo básico"),
+    "COST": ("Costco", "Consumo básico"), "CL": ("Colgate-Palmolive", "Consumo básico"),
+    "KHC": ("Kraft Heinz", "Consumo básico"), "MDLZ": ("Mondelez", "Consumo básico"),
+    # Salud
     "JNJ": ("Johnson & Johnson", "Salud"), "PFE": ("Pfizer", "Salud"), "MRK": ("Merck", "Salud"),
+    "UNH": ("UnitedHealth", "Salud"), "ABBV": ("AbbVie", "Salud"), "LLY": ("Eli Lilly", "Salud"),
+    "BMY": ("Bristol-Myers Squibb", "Salud"), "AMGN": ("Amgen", "Salud"),
+    "GILD": ("Gilead Sciences", "Salud"), "MRNA": ("Moderna", "Salud"), "ABT": ("Abbott", "Salud"),
+    # Financiero
     "JPM": ("JPMorgan Chase", "Financiero"), "V": ("Visa", "Financiero"),
     "COIN": ("Coinbase", "Financiero"), "PYPL": ("PayPal", "Financiero"),
+    "BAC": ("Bank of America", "Financiero"), "WFC": ("Wells Fargo", "Financiero"),
+    "GS": ("Goldman Sachs", "Financiero"), "MS": ("Morgan Stanley", "Financiero"),
+    "MA": ("Mastercard", "Financiero"), "C": ("Citigroup", "Financiero"),
+    "AXP": ("American Express", "Financiero"), "BRK-B": ("Berkshire Hathaway", "Financiero"),
+    "BLK": ("BlackRock", "Financiero"), "SCHW": ("Charles Schwab", "Financiero"),
+    "HSBC": ("HSBC", "Financiero"),
+    # Energía
     "XOM": ("Exxon Mobil", "Energía"), "CVX": ("Chevron", "Energía"),
-    "BA": ("Boeing", "Industriales"),
+    "SHEL": ("Shell", "Energía"), "COP": ("ConocoPhillips", "Energía"),
+    "SLB": ("SLB (Schlumberger)", "Energía"), "OXY": ("Occidental Petroleum", "Energía"),
+    "BP": ("BP", "Energía"),
+    # Industriales
+    "BA": ("Boeing", "Industriales"), "CAT": ("Caterpillar", "Industriales"),
+    "GE": ("General Electric", "Industriales"), "HON": ("Honeywell", "Industriales"),
+    "UPS": ("UPS", "Industriales"), "MMM": ("3M", "Industriales"),
+    "LMT": ("Lockheed Martin", "Industriales"), "DE": ("Deere & Co", "Industriales"),
+    "RTX": ("RTX (Raytheon)", "Industriales"), "UNP": ("Union Pacific", "Industriales"),
+    # Materiales
+    "FCX": ("Freeport-McMoRan", "Materiales"), "NUE": ("Nucor", "Materiales"),
+    "NEM": ("Newmont", "Materiales"), "DOW": ("Dow Inc.", "Materiales"),
+    "VALE": ("Vale", "Materiales"), "RIO": ("Rio Tinto", "Materiales"),
+    "BHP": ("BHP Group", "Materiales"),
+    # Utilities / Real Estate
+    "NEE": ("NextEra Energy", "Utilities"), "DUK": ("Duke Energy", "Utilities"),
+    "AMT": ("American Tower", "Real Estate"), "SPG": ("Simon Property Group", "Real Estate"),
 }
 TICKERS = list(INFO)
+
+# Acciones argentinas que cotizan directamente en pesos en BYMA (no son CEDEARs).
+# ticker en BYMA (sin .BA): (nombre, sector)
+INFO_AR = {
+    "GGAL": ("Grupo Financiero Galicia", "Bancos"), "BMA": ("Banco Macro", "Bancos"),
+    "SUPV": ("Grupo Supervielle", "Bancos"), "BBAR": ("BBVA Argentina", "Bancos"),
+    "VALO": ("Banco de Valores", "Bancos"),
+    "YPFD": ("YPF", "Energía"), "PAMP": ("Pampa Energía", "Energía"),
+    "CEPU": ("Central Puerto", "Energía"), "TGSU2": ("Transportadora Gas del Sur", "Energía"),
+    "TGNO4": ("Transportadora Gas del Norte", "Energía"), "EDN": ("Edenor", "Energía"),
+    "CGPA2": ("Central Costanera", "Energía"), "TRAN": ("Transener", "Energía"),
+    "CRES": ("Cresud", "Real estate / Agro"), "IRSA": ("IRSA", "Real estate / Agro"),
+    "ALUA": ("Aluar", "Materiales"), "TXAR": ("Ternium Argentina", "Materiales"),
+    "LOMA": ("Loma Negra", "Materiales"),
+    "MIRG": ("Mirgor", "Industriales"), "COME": ("Sociedad Comercial del Plata", "Industriales"),
+    "TECO2": ("Telecom Argentina", "Comunicación"), "CVH": ("Cablevisión Holding", "Comunicación"),
+    "BYMA": ("BYMA", "Financiero"), "AGRO": ("Agrometal", "Industriales"),
+    "MOLI": ("Molinos Río de la Plata", "Consumo básico"), "LEDE": ("Ledesma", "Consumo básico"),
+}
+TICKERS_AR = list(INFO_AR)
 
 # Parámetros fijos (no se muestran en pantalla)
 RSI_BAJO, RSI_ALTO = 30, 70      # verde (sobreventa) / rojo (sobrecompra)
 MIN_VOLUMEN_USD_M = 100          # volumen mínimo diario en NY: descarta CEDEARs con poca liquidez
+MIN_VOLUMEN_USD_M_AR = 0.3       # volumen mínimo diario equivalente en USD para acciones argentinas
+                                   # (el mercado local mueve mucho menos dólares que Nueva York, así
+                                   # que usa un piso propio en vez del mismo que los CEDEARs)
 
 
 # ----------------------------------------------------------------------------
@@ -170,6 +248,21 @@ def precios_cedear_ars(tickers):
         return pd.Series(dtype=float), pd.Series(dtype=float)
 
 
+@st.cache_data(ttl=3600, show_spinner="Descargando acciones argentinas...")
+def precios_ar(tickers):
+    """Precio y volumen diarios (1 año) de acciones que cotizan solo en BYMA, en pesos."""
+    ba = [t + ".BA" for t in tickers]
+    try:
+        d = yf.download(ba, period="1y", auto_adjust=True, progress=False)
+        cl = d["Close"].ffill()
+        vo = d["Volume"]
+        cl.columns = [c.replace(".BA", "") for c in cl.columns]
+        vo.columns = [c.replace(".BA", "") for c in vo.columns]
+        return cl, vo
+    except Exception:
+        return pd.DataFrame(), pd.DataFrame()
+
+
 @st.cache_data(ttl=6 * 3600, show_spinner="Descargando dividendos...")
 def dividendos_12m(tickers):
     corte = pd.Timestamp.today() - pd.DateOffset(years=1)
@@ -186,22 +279,28 @@ def dividendos_12m(tickers):
 
 
 @st.cache_data(ttl=300, show_spinner="Descargando datos intradiarios...")
-def rsi_45m(tickers):
-    """RSI(14) sobre velas de 45 min, armadas agrupando de a 3 velas de 15 min por rueda."""
-    d = yf.download(list(tickers), period="1mo", interval="15m", auto_adjust=True, progress=False)["Close"]
+def rsi_45m(tickers, sufijo="", tz="America/New_York", inicio_min=570):
+    """RSI(14) sobre velas de 45 min, armadas agrupando de a 3 velas de 15 min por rueda.
+    sufijo: se agrega a cada ticker al pedirle a Yahoo (".BA" para BYMA). tz/inicio_min: huso horario
+    y minuto de apertura de la rueda (9:30 NY = 570; 11:00 ART = 660) para armar los bloques de 45 min."""
+    pedidos = [t + sufijo for t in tickers]
+    d = yf.download(pedidos, period="1mo", interval="15m", auto_adjust=True, progress=False)["Close"]
+    if isinstance(d, pd.Series):
+        d = d.to_frame(pedidos[0])
     out, ultima = {}, None
-    for t in d.columns:
-        s = d[t].dropna()
+    for tp in d.columns:
+        t = tp[:-len(sufijo)] if sufijo and tp.endswith(sufijo) else tp
+        s = d[tp].dropna()
         if len(s) < 60:
             out[t] = np.nan
             continue
-        # Yahoo puede entregar la hora en UTC: se pasa siempre a hora de Nueva York
+        # Yahoo puede entregar la hora en UTC: se pasa siempre al huso horario de la rueda
         idx = s.index.tz_localize("UTC") if s.index.tz is None else s.index
-        s.index = idx.tz_convert("America/New_York")
+        s.index = idx.tz_convert(tz)
         dia = np.array(s.index.date)
-        # Bloque de 45 min según la hora (9:30 NY = 570 min), no por conteo de velas:
+        # Bloque de 45 min según la hora de apertura, no por conteo de velas:
         # así, si Yahoo omite una vela de 15 min, el resto no se desfasa.
-        minutos = s.index.hour * 60 + s.index.minute - 570
+        minutos = s.index.hour * 60 + s.index.minute - inicio_min
         bloque = np.asarray(minutos // 45)
         c45 = s.groupby([dia, bloque]).last()
         out[t] = float(rsi(c45).iloc[-1])
@@ -1016,6 +1115,13 @@ if close.empty:
     st.warning("No se pudieron obtener precios de Yahoo Finance en este momento. Recargá la página en unos minutos.")
     st.stop()
 
+# Dólar MEP, para convertir las acciones argentinas (que cotizan solo en pesos) a un equivalente en USD
+try:
+    _mep_df = mep_hist()
+    MEP_HOY = float(_mep_df["mep"].iloc[-1]) if len(_mep_df) else None
+except Exception:
+    MEP_HOY = None
+
 # Precios de CEDEARs en BYMA (ARS + volumen local)
 cedear_ars, cedear_vol_local = precios_cedear_ars(tuple(close.columns))
 
@@ -1039,12 +1145,47 @@ except Exception:
     ult_intra = None
     tabla["RSI 45 min"] = np.nan
 
+# Acciones argentinas (cotizan solo en pesos en BYMA, no tienen contraparte en Nueva York)
+close_ar, vol_ar = precios_ar(tuple(TICKERS_AR))
+close_ar = close_ar.dropna(axis=1, how="all")
+if not close_ar.empty and MEP_HOY:
+    tabla_ar = pd.DataFrame({
+        "Nombre": [INFO_AR[t][0] for t in close_ar.columns],
+        "Sector": ["🇦🇷 " + INFO_AR[t][1] for t in close_ar.columns],
+        "Precio USD": (close_ar.iloc[-1] / MEP_HOY).values,
+        "Precio ARS": close_ar.iloc[-1].values,
+        "Vol. BYMA": vol_ar[close_ar.columns].tail(5).mean().values,
+        "Volatilidad %": (close_ar.pct_change().tail(60).std() * np.sqrt(252) * 100).values,
+        "Volumen USD (M)": ((close_ar * vol_ar[close_ar.columns]).tail(30).mean() / MEP_HOY / 1e6).values,
+        "RSI diario": close_ar.apply(rsi).iloc[-1].values,
+    }, index=close_ar.columns)
+    tabla_ar.index.name = "Ticker"
+    tabla_ar["Var. diaria %"] = ((close_ar.iloc[-1] / close_ar.iloc[-2] - 1) * 100).values
+    try:
+        r45_ar, ult_intra_ar = rsi_45m(tuple(tabla_ar.index), sufijo=".BA",
+                                        tz="America/Argentina/Buenos_Aires", inicio_min=660)
+        tabla_ar["RSI 45 min"] = r45_ar.reindex(tabla_ar.index)
+    except Exception:
+        ult_intra_ar = None
+        tabla_ar["RSI 45 min"] = np.nan
+    tabla = pd.concat([tabla, tabla_ar], sort=True)
+    tabla.index.name = "Ticker"
+else:
+    ult_intra_ar = None
+
+# Liquidez: cada mercado tiene su propio piso de volumen (ver MIN_VOLUMEN_USD_M_AR)
+tabla["Es AR"] = tabla["Sector"].str.startswith("🇦🇷")
+tabla["Liquida"] = np.where(tabla["Es AR"], tabla["Volumen USD (M)"] >= MIN_VOLUMEN_USD_M_AR,
+                             tabla["Volumen USD (M)"] >= MIN_VOLUMEN_USD_M)
+
 # --- 1. CEDEARs: trading ------------------------------------------------------
 with tab1:
     H('<div class="eyebrow m">CEDEARs · Trading</div><div class="h2">RSI diario y de 45 minutos</div>')
     txt = f"Datos diarios al {close.index[-1].date()}"
-    txt += (f" · intradiario hasta {ult_intra:%d/%m %H:%M} (hora de Nueva York)" if ult_intra is not None
-            else " · RSI de 45 min no disponible ahora")
+    txt += (f" · CEDEARs intradiario hasta {ult_intra:%d/%m %H:%M} (hora de Nueva York)" if ult_intra is not None
+            else " · RSI de 45 min de CEDEARs no disponible ahora")
+    if ult_intra_ar is not None:
+        txt += f" · acciones argentinas hasta {ult_intra_ar:%d/%m %H:%M} (hora de Argentina)"
     st.caption(txt)
 
     lo, hi = RSI_BAJO, RSI_ALTO
@@ -1052,7 +1193,7 @@ with tab1:
     vol_min = c1.slider("Volatilidad mínima % (descarta las que casi no se mueven)", 0, 100, 30, step=5)
     filtro = c2.segmented_control("Mostrar", ["Todas", "Sobreventa", "Sobrecompra"], default="Todas", key="rsi_filtro") or "Todas"
 
-    t = tabla[(tabla["Volatilidad %"] >= vol_min) & (tabla["Volumen USD (M)"] >= MIN_VOLUMEN_USD_M)]
+    t = tabla[(tabla["Volatilidad %"] >= vol_min) & tabla["Liquida"]]
     if filtro == "Sobreventa":
         t = t[(t["RSI diario"] < lo) | (t["RSI 45 min"] < lo)]
     elif filtro == "Sobrecompra":
@@ -1065,9 +1206,13 @@ with tab1:
         sub = t[t["Sector"] == sector].sort_values("Volatilidad %", ascending=False)
         with st.expander(f"{sector} · {len(sub)} activos encontrados", expanded=True):
             def _precio_cel(r):
-                usd = f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
-                ars = f'<br><span class="muted" style="font-size:12px">AR$ {E.num(r["Precio ARS"], 0)}</span>' if not pd.isna(r["Precio ARS"]) else ""
-                return usd + ars
+                if r["Es AR"]:
+                    principal = f'<span class="strong">AR$ {E.num(r["Precio ARS"], 0)}</span>'
+                    secund = f'<br><span class="muted" style="font-size:12px">≈ US$ {E.num(r["Precio USD"], 2)}</span>' if not pd.isna(r["Precio USD"]) else ""
+                else:
+                    principal = f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
+                    secund = f'<br><span class="muted" style="font-size:12px">AR$ {E.num(r["Precio ARS"], 0)}</span>' if not pd.isna(r["Precio ARS"]) else ""
+                return principal + secund
             def _vol_byma(r):
                 v = r["Vol. BYMA"]
                 if pd.isna(v) or v == 0:
@@ -1084,21 +1229,33 @@ with tab1:
             H(E.variacion_chip(sub["Var. diaria %"].mean())
                     + E.tabla([("Activo", "l"), ("Precio", "l"), ("Vol. BYMA", "l"), ("Volatilidad", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")], filas))
     H(E.leyenda_rsi(lo, hi))
-    st.caption("RSI 45 min: velas de 45 minutos armadas desde datos de 15 min (Yahoo, pueden tener demora); fuera del horario de NY muestra la última rueda. "
+    st.caption("RSI 45 min: velas de 45 minutos armadas desde datos de 15 min (Yahoo, pueden tener demora); fuera del horario de mercado muestra la última rueda. "
                "Volatilidad: desvío de retornos diarios de 60 ruedas, anualizado; descartar las de baja volatilidad evita activos que casi no se mueven. "
+               "Las acciones argentinas (🇦🇷) tienen su propio piso de volumen mínimo, porque el mercado local mueve muchos menos dólares que Nueva York. "
                "La barra de cada RSI muestra su valor de 0 a 100. Informativo, no es una recomendación de inversión.")
 
 # --- 2. CEDEARs: dividendos + cara o barata -----------------------------------
 with tab2:
     H('<div class="eyebrow m">CEDEARs · Dividendos</div><div class="h2">Dividendos y valuación</div>')
-    f = fundamentales(tuple(tabla.index))
-    divs = dividendos_12m(tuple(tabla.index))
-    val = tabla[["Nombre", "Sector", "Precio USD", "Precio ARS", "Volumen USD (M)", "Var. diaria %"]].copy()
-    val["Div. 12m USD"] = pd.Series(divs)
-    val["Yield 12m %"] = val["Div. 12m USD"] / val["Precio USD"] * 100
+    # Las acciones argentinas necesitan el sufijo .BA para que Yahoo les traiga datos fundamentales
+    tickers_yahoo = tuple(tk + ".BA" if tabla.loc[tk, "Es AR"] else tk for tk in tabla.index)
+    f = fundamentales(tickers_yahoo)
+    f.index = tabla.index
+    divs_raw = dividendos_12m(tickers_yahoo)
+    divs = {tk: divs_raw.get(ytk, np.nan) for tk, ytk in zip(tabla.index, tickers_yahoo)}
+    val = tabla[["Nombre", "Sector", "Precio USD", "Precio ARS", "Volumen USD (M)", "Var. diaria %", "Es AR", "Liquida"]].copy()
+    # Para CEDEARs el dividendo que trae Yahoo viene en USD (de la acción en NY); para acciones
+    # argentinas viene en pesos (de la acción en BYMA), así que el yield se calcula contra el
+    # precio en la misma moneda en la que se pagó el dividendo.
+    val["Div. 12m"] = pd.Series(divs)
+    val["Yield 12m %"] = np.where(val["Es AR"], val["Div. 12m"] / val["Precio ARS"] * 100,
+                                   val["Div. 12m"] / val["Precio USD"] * 100)
     val = val.join(f[["P/E", "P/E futuro", "ROE %", "Deuda/EBITDA"]])
-    val.loc[val["Sector"] == "Financiero", "Deuda/EBITDA"] = np.nan   # no aplica a bancos y financieras
-    val["Posición rango 52 sem. %"] = (close.iloc[-1] - close.min()) / (close.max() - close.min()) * 100
+    val.loc[val["Sector"].isin(["Financiero", "🇦🇷 Bancos"]), "Deuda/EBITDA"] = np.nan   # no aplica a bancos y financieras
+    val["Posición rango 52 sem. %"] = pd.concat([
+        (close.iloc[-1] - close.min()) / (close.max() - close.min()) * 100,
+        (close_ar.iloc[-1] - close_ar.min()) / (close_ar.max() - close_ar.min()) * 100 if not close_ar.empty else pd.Series(dtype=float),
+    ])
 
     # Mediana de P/E por sector, calculada sobre toda la lista (antes de filtrar)
     pe_ok = val["P/E"].where(val["P/E"] > 0)
@@ -1121,7 +1278,7 @@ with tab2:
 
     solo_pagan = st.toggle("Solo las que pagan dividendos", value=True)
 
-    v = val[val["Volumen USD (M)"] >= MIN_VOLUMEN_USD_M]
+    v = val[val["Liquida"]]
     if solo_pagan:
         v = v[v["Yield 12m %"] > 0]
 
@@ -1130,13 +1287,20 @@ with tab2:
         sub = v[v["Sector"] == sector].sort_values("Yield 12m %", ascending=False)
         with st.expander(f"{sector} · {len(sub)} activos encontrados", expanded=True):
             def _precio_div(r):
-                usd = f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
-                ars_v = r.get("Precio ARS", np.nan)
-                ars = f'<br><span class="muted" style="font-size:12px">AR$ {E.num(ars_v, 0)}</span>' if not pd.isna(ars_v) else ""
-                return usd + ars
+                if r["Es AR"]:
+                    principal = f'<span class="strong">AR$ {E.num(r["Precio ARS"], 0)}</span>'
+                    secund = f'<br><span class="muted" style="font-size:12px">≈ US$ {E.num(r["Precio USD"], 2)}</span>' if not pd.isna(r["Precio USD"]) else ""
+                else:
+                    principal = f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
+                    ars_v = r.get("Precio ARS", np.nan)
+                    secund = f'<br><span class="muted" style="font-size:12px">AR$ {E.num(ars_v, 0)}</span>' if not pd.isna(ars_v) else ""
+                return principal + secund
+            def _div_cel(r):
+                moneda = "AR$ " if r["Es AR"] else "US$ "
+                return E.num(r["Div. 12m"], 2, moneda)
             filas = [[E.activo(r["Nombre"], tk, tk[:2], var_pct=r["Var. diaria %"]),
                       _precio_div(r),
-                      E.num(r["Div. 12m USD"], 2, "US$ "), chip_yield(r["Yield 12m %"]), E.num(r["P/E"], 1),
+                      _div_cel(r), chip_yield(r["Yield 12m %"]), E.num(r["P/E"], 1),
                       E.num(r["P/E vs sector"], 2, suf="x"), chip_roe(r["ROE %"]), chip_deuda(r["Deuda/EBITDA"]),
                       barra_rango(r["Posición rango 52 sem. %"]), chip_veredicto(r["Veredicto"])]
                      for tk, r in sub.iterrows()]
@@ -1145,7 +1309,8 @@ with tab2:
                            filas, compacta=True))
     st.markdown(
         "**Yield:** gris no paga · rojo <1,5% · amarillo 1,5–3% · verde 3–6% · naranja ≥6% (revisar por qué es tan alto). "
-        "Es bruto, sobre la acción en NY; el CEDEAR cobra en pesos y con retención en origen.  \n"
+        "Es bruto: para CEDEARs, sobre la acción en Nueva York (el CEDEAR cobra en pesos y con retención en origen); "
+        "para acciones argentinas, sobre el precio en BYMA.  \n"
         "**ROE %** (ganancia sobre el patrimonio de los accionistas): 🟢 15% o más · 🟡 entre 8% y 15% · 🔴 menos de 8% o negativo. "
         "Un patrimonio muy chico (por recompras de acciones) lo infla.  \n"
         "**Deuda/EBITDA** (años de ganancia operativa para pagar la deuda): 🟢 hasta 2 · 🟡 entre 2 y 4 · 🔴 más de 4. "
