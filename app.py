@@ -150,6 +150,28 @@ def precios(tickers):
     return d["Close"].ffill(), d["Volume"]
 
 
+@st.cache_data(ttl=1800, show_spinner="Descargando precios de CEDEARs en BYMA...")
+def precios_cedear_ars(tickers):
+    """Obtiene precio en ARS y volumen del CEDEAR en Buenos Aires (.BA)."""
+    ba = [t + ".BA" for t in tickers]
+    try:
+        d = yf.download(ba, period="5d", auto_adjust=True, progress=False)
+        cl = d["Close"].ffill()
+        vo = d["Volume"]
+        # último precio y volumen promedio 5 días
+        precio = {}; volumen = {}
+        for t in tickers:
+            tba = t + ".BA"
+            if tba in cl.columns and cl[tba].dropna().shape[0]:
+                precio[t] = float(cl[tba].dropna().iloc[-1])
+                volumen[t] = float(vo[tba].tail(5).mean()) if tba in vo.columns else 0.0
+            else:
+                precio[t] = np.nan; volumen[t] = 0.0
+        return pd.Series(precio), pd.Series(volumen)
+    except Exception:
+        return pd.Series(dtype=float), pd.Series(dtype=float)
+
+
 @st.cache_data(ttl=6 * 3600, show_spinner="Descargando dividendos...")
 def dividendos_12m(tickers):
     corte = pd.Timestamp.today() - pd.DateOffset(years=1)
@@ -996,17 +1018,15 @@ if close.empty:
     st.warning("No se pudieron obtener precios de Yahoo Finance en este momento. Recargá la página en unos minutos.")
     st.stop()
 
-# Dólar MEP actual para mostrar precios en pesos
-try:
-    _mep_df = mep_hist()
-    MEP_HOY = float(_mep_df["mep"].iloc[-1]) if len(_mep_df) else None
-except Exception:
-    MEP_HOY = None
+# Precios de CEDEARs en BYMA (ARS + volumen local)
+cedear_ars, cedear_vol_local = precios_cedear_ars(tuple(close.columns))
 
 tabla = pd.DataFrame({
     "Nombre": [INFO[t][0] for t in close.columns],
     "Sector": [INFO[t][1] for t in close.columns],
     "Precio USD": close.iloc[-1].values,
+    "Precio ARS": cedear_ars.reindex(close.columns).values,
+    "Vol. BYMA": cedear_vol_local.reindex(close.columns).values,
     "Volatilidad %": (close.pct_change().tail(60).std() * np.sqrt(252) * 100).values,
     "Volumen USD (M)": ((close * vol[close.columns]).tail(30).mean() / 1e6).values,
     "RSI diario": close.apply(rsi).iloc[-1].values,
@@ -1046,13 +1066,25 @@ with tab1:
     for sector in sorted(t["Sector"].unique()):
         sub = t[t["Sector"] == sector].sort_values("Volatilidad %", ascending=False)
         with st.expander(f"{sector} · {len(sub)} activos encontrados", expanded=True):
+            def _precio_cel(r):
+                usd = f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
+                ars = f'<br><span class="muted" style="font-size:12px">AR$ {E.num(r["Precio ARS"], 0)}</span>' if not pd.isna(r["Precio ARS"]) else ""
+                return usd + ars
+            def _vol_byma(r):
+                v = r["Vol. BYMA"]
+                if pd.isna(v) or v == 0:
+                    return '<span class="muted">-</span>'
+                if v >= 1e6:
+                    return E.num(v / 1e6, 1, suf=" M")
+                if v >= 1e3:
+                    return E.num(v / 1e3, 0, suf=" K")
+                return E.num(v, 0)
             filas = [[E.activo(r["Nombre"], tk, tk[:2], var_pct=r["Var. diaria %"]),
-                      f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
-                      + (f'<br><span class="muted" style="font-size:12px">AR$ {E.num(r["Precio USD"] * MEP_HOY, 0)}</span>' if MEP_HOY else ""),
+                      _precio_cel(r), _vol_byma(r),
                       E.num(r["Volatilidad %"], 2, suf="%"), E.rsi_pill(r["RSI diario"], lo, hi), E.rsi_pill(r["RSI 45 min"], lo, hi)]
                      for tk, r in sub.iterrows()]
             H(E.variacion_chip(sub["Var. diaria %"].mean())
-                    + E.tabla([("Activo", "l"), ("Precio", "l"), ("Volatilidad", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")], filas))
+                    + E.tabla([("Activo", "l"), ("Precio", "l"), ("Vol. BYMA", "l"), ("Volatilidad", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")], filas))
     H(E.leyenda_rsi(lo, hi))
     st.caption("RSI 45 min: velas de 45 minutos armadas desde datos de 15 min (Yahoo, pueden tener demora); fuera del horario de NY muestra la última rueda. "
                "Volatilidad: desvío de retornos diarios de 60 ruedas, anualizado; descartar las de baja volatilidad evita activos que casi no se mueven. "
@@ -1063,7 +1095,7 @@ with tab2:
     H('<div class="eyebrow m">CEDEARs · Dividendos</div><div class="h2">Dividendos y valuación</div>')
     f = fundamentales(tuple(tabla.index))
     divs = dividendos_12m(tuple(tabla.index))
-    val = tabla[["Nombre", "Sector", "Precio USD", "Volumen USD (M)", "Var. diaria %"]].copy()
+    val = tabla[["Nombre", "Sector", "Precio USD", "Precio ARS", "Volumen USD (M)", "Var. diaria %"]].copy()
     val["Div. 12m USD"] = pd.Series(divs)
     val["Yield 12m %"] = val["Div. 12m USD"] / val["Precio USD"] * 100
     val = val.join(f[["P/E", "P/E futuro", "ROE %", "Deuda/EBITDA"]])
@@ -1099,9 +1131,13 @@ with tab2:
     for sector in sorted(v["Sector"].unique()):
         sub = v[v["Sector"] == sector].sort_values("Yield 12m %", ascending=False)
         with st.expander(f"{sector} · {len(sub)} activos encontrados", expanded=True):
+            def _precio_div(r):
+                usd = f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
+                ars_v = r.get("Precio ARS", np.nan)
+                ars = f'<br><span class="muted" style="font-size:12px">AR$ {E.num(ars_v, 0)}</span>' if not pd.isna(ars_v) else ""
+                return usd + ars
             filas = [[E.activo(r["Nombre"], tk, tk[:2], var_pct=r["Var. diaria %"]),
-                      f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
-                      + (f'<br><span class="muted" style="font-size:12px">AR$ {E.num(r["Precio USD"] * MEP_HOY, 0)}</span>' if MEP_HOY else ""),
+                      _precio_div(r),
                       E.num(r["Div. 12m USD"], 2, "US$ "), chip_yield(r["Yield 12m %"]), E.num(r["P/E"], 1),
                       E.num(r["P/E vs sector"], 2, suf="x"), chip_roe(r["ROE %"]), chip_deuda(r["Deuda/EBITDA"]),
                       barra_rango(r["Posición rango 52 sem. %"]), chip_veredicto(r["Veredicto"])]
