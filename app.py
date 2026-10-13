@@ -995,6 +995,14 @@ close = close.dropna(axis=1, how="all")
 if close.empty:
     st.warning("No se pudieron obtener precios de Yahoo Finance en este momento. Recargá la página en unos minutos.")
     st.stop()
+
+# Dólar MEP actual para mostrar precios en pesos
+try:
+    _mep_df = mep_hist()
+    MEP_HOY = float(_mep_df["mep"].iloc[-1]) if len(_mep_df) else None
+except Exception:
+    MEP_HOY = None
+
 tabla = pd.DataFrame({
     "Nombre": [INFO[t][0] for t in close.columns],
     "Sector": [INFO[t][1] for t in close.columns],
@@ -1038,11 +1046,13 @@ with tab1:
     for sector in sorted(t["Sector"].unique()):
         sub = t[t["Sector"] == sector].sort_values("Volatilidad %", ascending=False)
         with st.expander(f"{sector} · {len(sub)} activos encontrados", expanded=True):
-            filas = [[E.activo(r["Nombre"], tk, tk[:2]), f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>',
+            filas = [[E.activo(r["Nombre"], tk, tk[:2], var_pct=r["Var. diaria %"]),
+                      f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
+                      + (f'<br><span class="muted" style="font-size:12px">AR$ {E.num(r["Precio USD"] * MEP_HOY, 0)}</span>' if MEP_HOY else ""),
                       E.num(r["Volatilidad %"], 2, suf="%"), E.rsi_pill(r["RSI diario"], lo, hi), E.rsi_pill(r["RSI 45 min"], lo, hi)]
                      for tk, r in sub.iterrows()]
             H(E.variacion_chip(sub["Var. diaria %"].mean())
-                    + E.tabla([("Activo", "l"), ("Precio USD", "l"), ("Volatilidad", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")], filas))
+                    + E.tabla([("Activo", "l"), ("Precio", "l"), ("Volatilidad", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")], filas))
     H(E.leyenda_rsi(lo, hi))
     st.caption("RSI 45 min: velas de 45 minutos armadas desde datos de 15 min (Yahoo, pueden tener demora); fuera del horario de NY muestra la última rueda. "
                "Volatilidad: desvío de retornos diarios de 60 ruedas, anualizado; descartar las de baja volatilidad evita activos que casi no se mueven. "
@@ -1053,7 +1063,7 @@ with tab2:
     H('<div class="eyebrow m">CEDEARs · Dividendos</div><div class="h2">Dividendos y valuación</div>')
     f = fundamentales(tuple(tabla.index))
     divs = dividendos_12m(tuple(tabla.index))
-    val = tabla[["Nombre", "Sector", "Precio USD", "Volumen USD (M)"]].copy()
+    val = tabla[["Nombre", "Sector", "Precio USD", "Volumen USD (M)", "Var. diaria %"]].copy()
     val["Div. 12m USD"] = pd.Series(divs)
     val["Yield 12m %"] = val["Div. 12m USD"] / val["Precio USD"] * 100
     val = val.join(f[["P/E", "P/E futuro", "ROE %", "Deuda/EBITDA"]])
@@ -1089,12 +1099,14 @@ with tab2:
     for sector in sorted(v["Sector"].unique()):
         sub = v[v["Sector"] == sector].sort_values("Yield 12m %", ascending=False)
         with st.expander(f"{sector} · {len(sub)} activos encontrados", expanded=True):
-            filas = [[E.activo(r["Nombre"], tk, tk[:2]), f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>',
+            filas = [[E.activo(r["Nombre"], tk, tk[:2], var_pct=r["Var. diaria %"]),
+                      f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
+                      + (f'<br><span class="muted" style="font-size:12px">AR$ {E.num(r["Precio USD"] * MEP_HOY, 0)}</span>' if MEP_HOY else ""),
                       E.num(r["Div. 12m USD"], 2, "US$ "), chip_yield(r["Yield 12m %"]), E.num(r["P/E"], 1),
                       E.num(r["P/E vs sector"], 2, suf="x"), chip_roe(r["ROE %"]), chip_deuda(r["Deuda/EBITDA"]),
                       barra_rango(r["Posición rango 52 sem. %"]), chip_veredicto(r["Veredicto"])]
                      for tk, r in sub.iterrows()]
-            H(E.tabla([("Activo", "l"), ("Precio USD", "l"), ("Div. 12m", "l"), ("Yield 12m", "l"), ("P/E", "l"),
+            H(E.tabla([("Activo", "l"), ("Precio", "l"), ("Div. 12m", "l"), ("Yield 12m", "l"), ("P/E", "l"),
                              ("P/E vs sector", "l"), ("ROE", "l"), ("Deuda / EBITDA", "l"), ("Rango 52 sem.", "l"), ("Valuación", "l")],
                            filas, compacta=True))
     st.markdown(

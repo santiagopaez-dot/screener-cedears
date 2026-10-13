@@ -214,8 +214,13 @@ def avatar(texto, color=None):
     return f'<span class="av">{esc(texto)}</span>'
 
 
-def activo(nombre, sub, av_txt, color=None):
-    return f'<div class="nm">{avatar(av_txt, color)}<div><b>{esc(nombre)}</b><span>{esc(sub)}</span></div></div>'
+def activo(nombre, sub, av_txt, color=None, var_pct=None):
+    v = ""
+    if var_pct is not None and var_pct == var_pct:
+        flecha = "↑" if var_pct > 0.005 else ("↓" if var_pct < -0.005 else "~")
+        cls = "up" if var_pct > 0.005 else ("down" if var_pct < -0.005 else "flat")
+        v = f' <span class="chip ch-{cls}" style="font-size:11px;padding:1px 5px;vertical-align:middle">{flecha} {num(abs(var_pct), 2, suf="%")}</span>'
+    return f'<div class="nm">{avatar(av_txt, color)}<div><b>{esc(nombre)}</b>{v}<span>{esc(sub)}</span></div></div>'
 
 
 def rsi_pill(v, lo=30, hi=70):
