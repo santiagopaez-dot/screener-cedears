@@ -33,9 +33,7 @@ st.html(E.css())
 st.html("<script>(function(){var d=document.documentElement;d.setAttribute('lang','es');d.setAttribute('translate','no');"
         "if(!document.querySelector('meta[name=\"google\"]')){var m=document.createElement('meta');m.name='google';m.content='notranslate';"
         "document.head.appendChild(m);}})();</script>", unsafe_allow_javascript=True)
-_ahora = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
-H(E.hero("Panel de inversiones", "CEDEARs, FCI y renta fija", "Información simple para tomar decisiones con más contexto.",
-               f"Hoy, {_ahora:%H:%M}"))
+H(E.hero("Panel de inversiones", "CEDEARs, FCI y renta fija", "Información simple para tomar decisiones con más contexto."))
 
 # Lista de ejemplo: confirmá en BYMA / tu broker cuáles tienen CEDEAR vigente.
 # ticker: (nombre, sector)
