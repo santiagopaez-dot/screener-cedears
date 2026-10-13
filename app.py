@@ -212,8 +212,14 @@ def _preparar_componente():
     d = Path(tempfile.gettempdir()) / "panel_tabla_click"
     d.mkdir(parents=True, exist_ok=True)
     f = d / "index.html"
-    if not f.exists() or f.read_text(encoding="utf-8") != E.COMPONENTE_TABLA_HTML:
-        f.write_text(E.COMPONENTE_TABLA_HTML, encoding="utf-8")
+    contenido = E.COMPONENTE_TABLA_HTML
+    try:
+        existente = open(str(f), encoding="utf-8").read()
+    except FileNotFoundError:
+        existente = ""
+    if existente != contenido:
+        with open(str(f), "w", encoding="utf-8") as fh:
+            fh.write(contenido)
     return d
 
 
