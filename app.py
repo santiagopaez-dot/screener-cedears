@@ -109,6 +109,81 @@ INFO = {
     # Utilities / Real Estate
     "NEE": ("NextEra Energy", "Utilities"), "DUK": ("Duke Energy", "Utilities"),
     "AMT": ("American Tower", "Real Estate"), "SPG": ("Simon Property Group", "Real Estate"),
+    # --- Ampliación: grandes y líquidas (el filtro de volumen oculta las que no operan) ---
+    # Tecnología
+    "TSM": ("Taiwan Semiconductor", "Tecnología"), "ASML": ("ASML", "Tecnología"),
+    "SAP": ("SAP", "Tecnología"), "SONY": ("Sony", "Tecnología"),
+    "MSTR": ("MicroStrategy", "Tecnología"), "SNOW": ("Snowflake", "Tecnología"),
+    "NET": ("Cloudflare", "Tecnología"), "DDOG": ("Datadog", "Tecnología"),
+    "PANW": ("Palo Alto Networks", "Tecnología"), "CRWD": ("CrowdStrike", "Tecnología"),
+    "FTNT": ("Fortinet", "Tecnología"), "ADI": ("Analog Devices", "Tecnología"),
+    "LRCX": ("Lam Research", "Tecnología"), "AMAT": ("Applied Materials", "Tecnología"),
+    "KLAC": ("KLA Corp", "Tecnología"), "NXPI": ("NXP Semiconductors", "Tecnología"),
+    "MRVL": ("Marvell", "Tecnología"), "ANET": ("Arista Networks", "Tecnología"),
+    "CDNS": ("Cadence", "Tecnología"), "SNPS": ("Synopsys", "Tecnología"),
+    "INTU": ("Intuit", "Tecnología"), "STNE": ("StoneCo", "Tecnología"),
+    "GLOB": ("Globant", "Tecnología"),
+    # Comunicación
+    "GOOG": ("Alphabet (clase C)", "Comunicación"), "TTWO": ("Take-Two", "Comunicación"),
+    "EA": ("Electronic Arts", "Comunicación"), "CHTR": ("Charter Comms", "Comunicación"),
+    "FOXA": ("Fox Corp", "Comunicación"), "BIDU": ("Baidu", "Comunicación"),
+    "VIV": ("Telefônica Brasil", "Comunicación"),
+    # Consumo discrecional
+    "BKNG": ("Booking", "Consumo discrecional"), "MAR": ("Marriott", "Consumo discrecional"),
+    "HLT": ("Hilton", "Consumo discrecional"), "RCL": ("Royal Caribbean", "Consumo discrecional"),
+    "CCL": ("Carnival", "Consumo discrecional"), "CMG": ("Chipotle", "Consumo discrecional"),
+    "ROST": ("Ross Stores", "Consumo discrecional"), "TJX": ("TJX Companies", "Consumo discrecional"),
+    "DG": ("Dollar General", "Consumo discrecional"), "DLTR": ("Dollar Tree", "Consumo discrecional"),
+    "LULU": ("Lululemon", "Consumo discrecional"), "CVNA": ("Carvana", "Consumo discrecional"),
+    "TM": ("Toyota", "Consumo discrecional"), "HMC": ("Honda", "Consumo discrecional"),
+    "STLA": ("Stellantis", "Consumo discrecional"), "JD": ("JD.com", "Consumo discrecional"),
+    "PDD": ("PDD (Pinduoduo)", "Consumo discrecional"), "NIO": ("NIO", "Consumo discrecional"),
+    "LI": ("Li Auto", "Consumo discrecional"),
+    # Consumo básico
+    "MNST": ("Monster Beverage", "Consumo básico"), "KDP": ("Keurig Dr Pepper", "Consumo básico"),
+    "STZ": ("Constellation Brands", "Consumo básico"), "EL": ("Estée Lauder", "Consumo básico"),
+    "KMB": ("Kimberly-Clark", "Consumo básico"), "GIS": ("General Mills", "Consumo básico"),
+    "HSY": ("Hershey", "Consumo básico"), "ADM": ("Archer-Daniels-Midland", "Consumo básico"),
+    "ABEV": ("Ambev", "Consumo básico"),
+    # Salud
+    "TMO": ("Thermo Fisher", "Salud"), "DHR": ("Danaher", "Salud"),
+    "ISRG": ("Intuitive Surgical", "Salud"), "MDT": ("Medtronic", "Salud"),
+    "CVS": ("CVS Health", "Salud"), "CI": ("Cigna", "Salud"),
+    "HUM": ("Humana", "Salud"), "ZTS": ("Zoetis", "Salud"),
+    "BDX": ("Becton Dickinson", "Salud"), "SYK": ("Stryker", "Salud"),
+    "BSX": ("Boston Scientific", "Salud"), "VRTX": ("Vertex Pharma", "Salud"),
+    "REGN": ("Regeneron", "Salud"), "DXCM": ("Dexcom", "Salud"),
+    # Financiero
+    "USB": ("US Bancorp", "Financiero"), "PNC": ("PNC Financial", "Financiero"),
+    "TFC": ("Truist Financial", "Financiero"), "COF": ("Capital One", "Financiero"),
+    "BK": ("Bank of NY Mellon", "Financiero"), "SPGI": ("S&P Global", "Financiero"),
+    "MCO": ("Moody's", "Financiero"), "ICE": ("Intercontinental Exchange", "Financiero"),
+    "CME": ("CME Group", "Financiero"), "CB": ("Chubb", "Financiero"),
+    "PGR": ("Progressive", "Financiero"), "MET": ("MetLife", "Financiero"),
+    "PRU": ("Prudential", "Financiero"), "AFL": ("Aflac", "Financiero"),
+    "ITUB": ("Itaú Unibanco", "Financiero"), "BBD": ("Banco Bradesco", "Financiero"),
+    "NU": ("Nu Holdings", "Financiero"),
+    # Energía
+    "EOG": ("EOG Resources", "Energía"), "MPC": ("Marathon Petroleum", "Energía"),
+    "PSX": ("Phillips 66", "Energía"), "VLO": ("Valero Energy", "Energía"),
+    "KMI": ("Kinder Morgan", "Energía"), "OKE": ("ONEOK", "Energía"),
+    "HAL": ("Halliburton", "Energía"), "DVN": ("Devon Energy", "Energía"),
+    "PBR": ("Petrobras", "Energía"),
+    # Industriales
+    "GD": ("General Dynamics", "Industriales"), "NOC": ("Northrop Grumman", "Industriales"),
+    "EMR": ("Emerson Electric", "Industriales"), "ETN": ("Eaton", "Industriales"),
+    "ITW": ("Illinois Tool Works", "Industriales"), "PH": ("Parker Hannifin", "Industriales"),
+    "CSX": ("CSX Corp", "Industriales"), "NSC": ("Norfolk Southern", "Industriales"),
+    "FDX": ("FedEx", "Industriales"), "WM": ("Waste Management", "Industriales"),
+    "CMI": ("Cummins", "Industriales"),
+    # Materiales
+    "LIN": ("Linde", "Materiales"), "APD": ("Air Products", "Materiales"),
+    "SHW": ("Sherwin-Williams", "Materiales"), "ECL": ("Ecolab", "Materiales"),
+    "DD": ("DuPont", "Materiales"), "CF": ("CF Industries", "Materiales"),
+    # Real Estate
+    "PLD": ("Prologis", "Real Estate"), "CCI": ("Crown Castle", "Real Estate"),
+    "EQIX": ("Equinix", "Real Estate"), "PSA": ("Public Storage", "Real Estate"),
+    "O": ("Realty Income", "Real Estate"), "WELL": ("Welltower", "Real Estate"),
 }
 TICKERS = list(INFO)
 
@@ -1105,6 +1180,40 @@ def barra_rango(p):
             f'<i style="width:{max(2, min(100, p)):.0f}%;background:#8C6FB3"></i></div><span>{p:.0f}%</span></div>')
 
 
+def filtro_busqueda(df, texto):
+    """Filtra un DataFrame de activos (índice=ticker, col 'Nombre') por nombre o ticker."""
+    if not texto or not texto.strip():
+        return df
+    t = texto.strip().upper()
+    mask = df.index.to_series().str.upper().str.contains(t, regex=False) | \
+           df["Nombre"].str.upper().str.contains(t, regex=False)
+    return df[mask]
+
+
+def controles_busqueda_fav(tabla, pref, gestionar=True):
+    """Buscador + (opcional) multiselect de favoritas. Devuelve (texto_busqueda, set_favoritas).
+    Las favoritas viven en session_state['fav_acciones'] y se comparten entre pestañas; se
+    gestionan (agregar/quitar) solo donde gestionar=True, para no tener dos selectores en conflicto."""
+    favs = st.session_state.setdefault("fav_acciones", set())
+    if not gestionar:
+        busqueda = st.text_input("Buscar", placeholder="🔍 Nombre o ticker (ej: Apple, AAPL)",
+                                 label_visibility="collapsed", key=f"{pref}_busq")
+        return busqueda, set(favs)
+    cb1, cb2 = st.columns([2, 3], vertical_alignment="bottom")
+    busqueda = cb1.text_input("Buscar", placeholder="🔍 Nombre o ticker (ej: Apple, AAPL)",
+                              label_visibility="collapsed", key=f"{pref}_busq")
+    opciones = list(tabla.index)
+    nombres = {tk: tabla.loc[tk, "Nombre"] for tk in opciones}
+    fav_sel = cb2.multiselect("★ Favoritas (aparecen primero)",
+                              options=sorted(opciones, key=lambda k: nombres[k]),
+                              default=sorted(favs & set(opciones)),
+                              format_func=lambda tk: f"★ {nombres[tk]} ({tk})",
+                              key=f"{pref}_fav", label_visibility="collapsed",
+                              placeholder="★ Elegí tus favoritas para fijarlas arriba")
+    st.session_state["fav_acciones"] = set(fav_sel)
+    return busqueda, set(fav_sel)
+
+
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "CEDEARs · Trading", "CEDEARs · Dividendos", "Fondos (FCI)", "Simulador de tasas", "Renta fija", "Mi cartera",
 ])
@@ -1189,6 +1298,7 @@ with tab1:
     st.caption(txt)
 
     lo, hi = RSI_BAJO, RSI_ALTO
+    busqueda, favs = controles_busqueda_fav(tabla, "trad")
     c1, c2 = st.columns([2, 3], vertical_alignment="bottom")
     vol_min = c1.slider("Volatilidad mínima % (descarta las que casi no se mueven)", 0, 100, 30, step=5)
     filtro = c2.segmented_control("Mostrar", ["Todas", "Sobreventa", "Sobrecompra"], default="Todas", key="rsi_filtro") or "Todas"
@@ -1198,36 +1308,49 @@ with tab1:
         t = t[(t["RSI diario"] < lo) | (t["RSI 45 min"] < lo)]
     elif filtro == "Sobrecompra":
         t = t[(t["RSI diario"] > hi) | (t["RSI 45 min"] > hi)]
+    t = filtro_busqueda(t, busqueda)
 
-    st.caption(f"{len(t)} de {len(tabla)} CEDEARs pasan los filtros, agrupados por sector.")
-    if t.empty:
-        st.info("Ningún CEDEAR pasa los filtros elegidos.")
-    for sector in sorted(t["Sector"].unique()):
-        sub = t[t["Sector"] == sector].sort_values("Volatilidad %", ascending=False)
-        with st.expander(f"{sector} · {len(sub)} activos encontrados", expanded=True):
-            def _precio_cel(r):
-                if r["Es AR"]:
-                    principal = f'<span class="strong">AR$ {E.num(r["Precio ARS"], 0)}</span>'
-                    secund = f'<br><span class="muted" style="font-size:12px">≈ US$ {E.num(r["Precio USD"], 2)}</span>' if not pd.isna(r["Precio USD"]) else ""
-                else:
-                    principal = f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
-                    secund = f'<br><span class="muted" style="font-size:12px">AR$ {E.num(r["Precio ARS"], 0)}</span>' if not pd.isna(r["Precio ARS"]) else ""
-                return principal + secund
-            def _vol_byma(r):
-                v = r["Vol. BYMA"]
-                if pd.isna(v) or v == 0:
-                    return '<span class="muted">-</span>'
-                if v >= 1e6:
-                    return E.num(v / 1e6, 1, suf=" M")
-                if v >= 1e3:
-                    return E.num(v / 1e3, 0, suf=" K")
-                return E.num(v, 0)
+    def _precio_cel(r):
+        if r["Es AR"]:
+            principal = f'<span class="strong">AR$ {E.num(r["Precio ARS"], 0)}</span>'
+            secund = f'<br><span class="muted" style="font-size:12px">≈ US$ {E.num(r["Precio USD"], 2)}</span>' if not pd.isna(r["Precio USD"]) else ""
+        else:
+            principal = f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
+            secund = f'<br><span class="muted" style="font-size:12px">AR$ {E.num(r["Precio ARS"], 0)}</span>' if not pd.isna(r["Precio ARS"]) else ""
+        return principal + secund
+
+    def _vol_byma(r):
+        v = r["Vol. BYMA"]
+        if pd.isna(v) or v == 0:
+            return '<span class="muted">-</span>'
+        if v >= 1e6:
+            return E.num(v / 1e6, 1, suf=" M")
+        if v >= 1e3:
+            return E.num(v / 1e3, 0, suf=" K")
+        return E.num(v, 0)
+
+    COLS_TRAD = [("Activo", "l"), ("Precio", "l"), ("Vol. BYMA", "l"), ("Volatilidad", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")]
+
+    def _grupo_trad(titulo, sub, abierto):
+        with st.expander(f"{titulo} · {len(sub)} activo" + ("s" if len(sub)!=1 else ""), expanded=abierto):
             filas = [[E.activo(r["Nombre"], tk, tk[:2], var_pct=r["Var. diaria %"]),
                       _precio_cel(r), _vol_byma(r),
                       E.num(r["Volatilidad %"], 2, suf="%"), E.rsi_pill(r["RSI diario"], lo, hi), E.rsi_pill(r["RSI 45 min"], lo, hi)]
                      for tk, r in sub.iterrows()]
-            H(E.variacion_chip(sub["Var. diaria %"].mean())
-                    + E.tabla([("Activo", "l"), ("Precio", "l"), ("Vol. BYMA", "l"), ("Volatilidad", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")], filas))
+            H(E.variacion_chip(sub["Var. diaria %"].mean()) + E.tabla(COLS_TRAD, filas))
+
+    # Favoritas primero (respetan la búsqueda, pero no el resto de filtros: siempre visibles)
+    fav_df = filtro_busqueda(tabla[tabla.index.isin(favs)], busqueda)
+    if len(fav_df):
+        _grupo_trad("★ Favoritas", fav_df.sort_values("Var. diaria %", ascending=False), abierto=True)
+
+    cuerpo = t[~t.index.isin(favs)]
+    st.caption(f"{len(t)} de {len(tabla)} activos pasan los filtros, agrupados por sector.")
+    if cuerpo.empty and not len(fav_df):
+        st.info("Ningún activo pasa los filtros elegidos.")
+    for sector in sorted(cuerpo["Sector"].unique()):
+        sub = cuerpo[cuerpo["Sector"] == sector].sort_values("Volatilidad %", ascending=False)
+        _grupo_trad(sector, sub, abierto=bool(busqueda.strip()))
     H(E.leyenda_rsi(lo, hi))
     st.caption("RSI 45 min: velas de 45 minutos armadas desde datos de 15 min (Yahoo, pueden tener demora); fuera del horario de mercado muestra la última rueda. "
                "Volatilidad: desvío de retornos diarios de 60 ruedas, anualizado; descartar las de baja volatilidad evita activos que casi no se mueven. "
@@ -1237,13 +1360,18 @@ with tab1:
 # --- 2. CEDEARs: dividendos + cara o barata -----------------------------------
 with tab2:
     H('<div class="eyebrow m">CEDEARs · Dividendos</div><div class="h2">Dividendos y valuación</div>')
-    # Las acciones argentinas necesitan el sufijo .BA para que Yahoo les traiga datos fundamentales
-    tickers_yahoo = tuple(tk + ".BA" if tabla.loc[tk, "Es AR"] else tk for tk in tabla.index)
+    busqueda_d, favs_d = controles_busqueda_fav(tabla, "div", gestionar=False)
+    st.caption("Tus favoritas (★) se eligen en la pestaña «CEDEARs · Trading» y también aparecen primero acá.")
+    # Para no pedirle datos fundamentales a Yahoo de los 250+ tickers (lento), solo traemos los de
+    # las que pasan el filtro de volumen más las favoritas. El resto no se muestra en esta pestaña.
+    necesarios = sorted(set(tabla.index[tabla["Liquida"]]) | (favs_d & set(tabla.index)))
+    base = tabla.loc[necesarios]
+    tickers_yahoo = tuple(tk + ".BA" if base.loc[tk, "Es AR"] else tk for tk in base.index)
     f = fundamentales(tickers_yahoo)
-    f.index = tabla.index
+    f.index = base.index
     divs_raw = dividendos_12m(tickers_yahoo)
-    divs = {tk: divs_raw.get(ytk, np.nan) for tk, ytk in zip(tabla.index, tickers_yahoo)}
-    val = tabla[["Nombre", "Sector", "Precio USD", "Precio ARS", "Volumen USD (M)", "Var. diaria %", "Es AR", "Liquida"]].copy()
+    divs = {tk: divs_raw.get(ytk, np.nan) for tk, ytk in zip(base.index, tickers_yahoo)}
+    val = base[["Nombre", "Sector", "Precio USD", "Precio ARS", "Volumen USD (M)", "Var. diaria %", "Es AR", "Liquida"]].copy()
     # Para CEDEARs el dividendo que trae Yahoo viene en USD (de la acción en NY); para acciones
     # argentinas viene en pesos (de la acción en BYMA), así que el yield se calcula contra el
     # precio en la misma moneda en la que se pagó el dividendo.
@@ -1252,10 +1380,11 @@ with tab2:
                                    val["Div. 12m"] / val["Precio USD"] * 100)
     val = val.join(f[["P/E", "P/E futuro", "ROE %", "Deuda/EBITDA"]])
     val.loc[val["Sector"].isin(["Financiero", "🇦🇷 Bancos"]), "Deuda/EBITDA"] = np.nan   # no aplica a bancos y financieras
-    val["Posición rango 52 sem. %"] = pd.concat([
+    rango = pd.concat([
         (close.iloc[-1] - close.min()) / (close.max() - close.min()) * 100,
         (close_ar.iloc[-1] - close_ar.min()) / (close_ar.max() - close_ar.min()) * 100 if not close_ar.empty else pd.Series(dtype=float),
     ])
+    val["Posición rango 52 sem. %"] = rango.reindex(val.index)
 
     # Mediana de P/E por sector, calculada sobre toda la lista (antes de filtrar)
     pe_ok = val["P/E"].where(val["P/E"] > 0)
@@ -1281,32 +1410,44 @@ with tab2:
     v = val[val["Liquida"]]
     if solo_pagan:
         v = v[v["Yield 12m %"] > 0]
+    v = filtro_busqueda(v, busqueda_d)
 
-    st.caption(f"{len(v)} de {len(val)} CEDEARs pasan los filtros, agrupados por sector.")
-    for sector in sorted(v["Sector"].unique()):
-        sub = v[v["Sector"] == sector].sort_values("Yield 12m %", ascending=False)
-        with st.expander(f"{sector} · {len(sub)} activos encontrados", expanded=True):
-            def _precio_div(r):
-                if r["Es AR"]:
-                    principal = f'<span class="strong">AR$ {E.num(r["Precio ARS"], 0)}</span>'
-                    secund = f'<br><span class="muted" style="font-size:12px">≈ US$ {E.num(r["Precio USD"], 2)}</span>' if not pd.isna(r["Precio USD"]) else ""
-                else:
-                    principal = f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
-                    ars_v = r.get("Precio ARS", np.nan)
-                    secund = f'<br><span class="muted" style="font-size:12px">AR$ {E.num(ars_v, 0)}</span>' if not pd.isna(ars_v) else ""
-                return principal + secund
-            def _div_cel(r):
-                moneda = "AR$ " if r["Es AR"] else "US$ "
-                return E.num(r["Div. 12m"], 2, moneda)
+    def _precio_div(r):
+        if r["Es AR"]:
+            principal = f'<span class="strong">AR$ {E.num(r["Precio ARS"], 0)}</span>'
+            secund = f'<br><span class="muted" style="font-size:12px">≈ US$ {E.num(r["Precio USD"], 2)}</span>' if not pd.isna(r["Precio USD"]) else ""
+        else:
+            principal = f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
+            ars_v = r.get("Precio ARS", np.nan)
+            secund = f'<br><span class="muted" style="font-size:12px">AR$ {E.num(ars_v, 0)}</span>' if not pd.isna(ars_v) else ""
+        return principal + secund
+
+    def _div_cel(r):
+        moneda = "AR$ " if r["Es AR"] else "US$ "
+        return E.num(r["Div. 12m"], 2, moneda)
+
+    COLS_DIV = [("Activo", "l"), ("Precio", "l"), ("Div. 12m", "l"), ("Yield 12m", "l"), ("P/E", "l"),
+                ("P/E vs sector", "l"), ("ROE", "l"), ("Deuda / EBITDA", "l"), ("Rango 52 sem.", "l"), ("Valuación", "l")]
+
+    def _grupo_div(titulo, sub, abierto):
+        with st.expander(f"{titulo} · {len(sub)} activo" + ("s" if len(sub)!=1 else ""), expanded=abierto):
             filas = [[E.activo(r["Nombre"], tk, tk[:2], var_pct=r["Var. diaria %"]),
-                      _precio_div(r),
-                      _div_cel(r), chip_yield(r["Yield 12m %"]), E.num(r["P/E"], 1),
+                      _precio_div(r), _div_cel(r), chip_yield(r["Yield 12m %"]), E.num(r["P/E"], 1),
                       E.num(r["P/E vs sector"], 2, suf="x"), chip_roe(r["ROE %"]), chip_deuda(r["Deuda/EBITDA"]),
                       barra_rango(r["Posición rango 52 sem. %"]), chip_veredicto(r["Veredicto"])]
                      for tk, r in sub.iterrows()]
-            H(E.tabla([("Activo", "l"), ("Precio", "l"), ("Div. 12m", "l"), ("Yield 12m", "l"), ("P/E", "l"),
-                             ("P/E vs sector", "l"), ("ROE", "l"), ("Deuda / EBITDA", "l"), ("Rango 52 sem.", "l"), ("Valuación", "l")],
-                           filas, compacta=True))
+            H(E.tabla(COLS_DIV, filas, compacta=True))
+
+    # Favoritas primero (las que pasan el filtro de liquidez y la búsqueda)
+    fav_dv = filtro_busqueda(v[v.index.isin(favs_d)], busqueda_d)
+    if len(fav_dv):
+        _grupo_div("★ Favoritas", fav_dv.sort_values("Yield 12m %", ascending=False), abierto=True)
+
+    cuerpo_d = v[~v.index.isin(favs_d)]
+    st.caption(f"{len(v)} de {len(val)} activos líquidos pasan los filtros, agrupados por sector.")
+    for sector in sorted(cuerpo_d["Sector"].unique()):
+        sub = cuerpo_d[cuerpo_d["Sector"] == sector].sort_values("Yield 12m %", ascending=False)
+        _grupo_div(sector, sub, abierto=bool(busqueda_d.strip()))
     st.markdown(
         "**Yield:** gris no paga · rojo <1,5% · amarillo 1,5–3% · verde 3–6% · naranja ≥6% (revisar por qué es tan alto). "
         "Es bruto: para CEDEARs, sobre la acción en Nueva York (el CEDEAR cobra en pesos y con retención en origen); "
@@ -1519,7 +1660,11 @@ with tab5:
                                   help="Por defecto, la del REM del BCRA; podés poner la tuya.")
         st.caption(rem_nota2 if rem_nota2 else "No se pudo leer el REM: ingresá tu propia estimación de inflación anual.")
     st.caption("Precios en vivo de data912 (no es tiempo real). La TIR es lo que rinde el instrumento **si lo mantenés hasta el "
-               "vencimiento y el emisor paga todo**; no es una predicción.")
+               "vencimiento y el emisor paga todo**; no es una predicción. No es la lista completa de todo lo que cotiza en BYMA: "
+               "verificá siempre el cronograma exacto contra el prospecto o tu broker antes de invertir. En las ONs agregadas más "
+               "recientemente (Petroquímica Comodoro Rivadavia, Capex, Edenor, Telecom TLCV/TLCW, Cresud CS52, Pluspetrol), "
+               "las fechas de pago son una aproximación calculada desde el vencimiento con la frecuencia informada por el emisor, "
+               "no están confirmadas contra el aviso de pago original — pueden estar corridas por algunos días.")
     liq = liquidacion()
     c1, c2 = st.columns(2)
     CAPS = {"Mensual": 12, "Trimestral": 4, "Semestral": 2, "Anual": 1, "Diaria": 365}
