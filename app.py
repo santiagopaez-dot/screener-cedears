@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import re
 import json
+import tempfile
 import altair as alt
 import estilo as E
 import streamlit.components.v1 as components
@@ -206,9 +207,17 @@ def fundamentales(tickers):
     return df.reindex(columns=["Sector", "P/E", "P/E futuro", "P/B", "ROE %", "Deuda/EBITDA"])
 
 
-_COMP_DIR = Path(__file__).parent / "componentes" / "tabla_click"
-# Tabla con filas clicables (si falta la carpeta del componente, el ranking usa un desplegable)
-tabla_click = components.declare_component("tabla_click", path=str(_COMP_DIR)) if (_COMP_DIR / "index.html").exists() else None
+def _preparar_componente():
+    """Escribe el componente de tabla clicable en una carpeta temporal y devuelve su ruta."""
+    d = Path(tempfile.gettempdir()) / "panel_tabla_click"
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / "index.html"
+    if not f.exists() or f.read_text(encoding="utf-8") != E.COMPONENTE_TABLA_HTML:
+        f.write_text(E.COMPONENTE_TABLA_HTML, encoding="utf-8")
+    return d
+
+
+tabla_click = components.declare_component("tabla_click", path=str(_preparar_componente()))
 
 API = "https://api.argentinadatos.com/v1/finanzas"
 TIPOS_FCI = {"Mercado de dinero": "mercadoDinero", "Renta fija": "rentaFija",
@@ -546,7 +555,114 @@ def precios_cartera(tickers, inicio):
     return d.ffill()
 
 
-def calcular_cartera(ops, close, mep=None):
+ACT_FCI, ACT_BONO = "FCI|", "BONO|"
+
+
+def nombre_activo(k):
+    k = str(k)
+    if k.startswith(ACT_FCI):
+        return "FCI · " + k[len(ACT_FCI):]
+    if k.startswith(ACT_BONO):
+        return k[len(ACT_BONO):] + " (bono/letra)"
+    return k
+
+
+def catalogo_bonos():
+    """Letras, bonos soberanos y ONs del archivo cronogramas.json: clave -> etiqueta, ticker de precio, moneda y pagos."""
+    c = cargar_cronogramas()
+    cat = {}
+    for l in c["letras"]:
+        cat[l["ticker"]] = {"etq": f"{l['ticker']} · Letra en pesos", "px": l["ticker"], "ars": True,
+                            "flujos": [(l["vencimiento"], l["pago_final"])]}
+    for k, v in c["soberanos"].items():
+        cat[k] = {"etq": f"{k} · Bono soberano en USD", "px": k + "D", "ars": False, "flujos": v["flujos"]}
+    for k, v in c["ons"].items():
+        cat[k] = {"etq": f"{k} · {v['nombre']} (ON en USD)", "px": v["precio_ticker"], "ars": False, "flujos": v["flujos"]}
+    return cat
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def historial_data912(ticker):
+    """Cierre diario por 100 VN (data912, no tiempo real)."""
+    r = requests.get(f"https://data912.com/historical/bonds/{ticker}", timeout=40)
+    r.raise_for_status()
+    d = pd.DataFrame(r.json())
+    d["date"] = pd.to_datetime(d["date"])
+    return d.drop_duplicates("date").set_index("date")["c"].astype(float).sort_index()
+
+
+def tipo_api_fci(fd):
+    t = _plano((fd or {}).get("tipoRenta", ""))
+    for k, v in (("mercado de dinero", "mercadoDinero"), ("renta fija", "rentaFija"),
+                 ("renta variable", "rentaVariable"), ("renta mixta", "rentaMixta")):
+        if k in t:
+            return v
+    return "rentaFija"
+
+
+@st.cache_data(ttl=3600, show_spinner="Descargando la evolución del fondo...")
+def vcp_fondo(tipos, nombre, ini, fin):
+    """Valor de la cuotaparte en fechas semanales entre ini y fin (se interpola entre fechas)."""
+    fechas = sorted({f.normalize() for f in list(pd.date_range(ini, fin, freq="7D")) + [pd.Timestamp(fin)]})
+    for tipo in tipos:
+        vals = []
+        for f in fechas:
+            df = fci_cercano(tipo, f.date())
+            fila = df[df["fondo"] == nombre] if len(df) else df
+            vals.append(float(fila["vcp"].iloc[0]) if len(fila) else np.nan)
+        if sum(v == v for v in vals) >= 2:
+            return fechas, vals
+    return fechas, [np.nan] * len(fechas)
+
+
+def datos_cartera(keys, inicio, mep):
+    """Precios en USD por unidad (acción, cuotaparte o VN) y pagos de bonos en USD por VN, indexados por día hábil."""
+    idx = pd.bdate_range(inicio, pd.Timestamp.today().normalize())
+    mep_i = None if mep is None else mep.reindex(mep.index.union(idx)).ffill().bfill().reindex(idx)
+    cols, pagos = {}, pd.DataFrame(0.0, index=idx, columns=list(keys))
+    acciones = [k for k in keys if "|" not in k]
+    if acciones:
+        c = precios_cartera(tuple(acciones), inicio)
+        for t in acciones:
+            if t in c.columns and not c[t].dropna().empty:
+                cols[t] = c[t].reindex(c.index.union(idx)).ffill().reindex(idx)
+    for k in [k for k in keys if k.startswith(ACT_FCI)]:
+        nombre = k[len(ACT_FCI):]
+        fd = buscar_fondo(detalle_fondos(), nombre)
+        tipos = [tipo_api_fci(fd)] + [t for t in TIPOS_FCI.values() if t != tipo_api_fci(fd)]
+        fechas, vals = vcp_fondo(tuple(tipos), nombre, str(idx[0].date()), str(idx[-1].date()))
+        sv = pd.Series(vals, index=fechas).dropna()
+        if sv.empty:
+            continue
+        sv = sv.reindex(sv.index.union(idx)).interpolate(method="time").reindex(idx).ffill().bfill()
+        en_usd = "dolar" in _plano((fd or {}).get("moneda", ""))
+        if not en_usd and mep_i is None:
+            raise ValueError("Para un fondo en pesos hace falta el dólar MEP histórico, que no está disponible ahora.")
+        cols[k] = sv if en_usd else sv / mep_i
+    cat = catalogo_bonos() if any(k.startswith(ACT_BONO) for k in keys) else {}
+    for k in [k for k in keys if k.startswith(ACT_BONO)]:
+        info = cat.get(k[len(ACT_BONO):])
+        if info is None:
+            continue
+        if info["ars"] and mep_i is None:
+            raise ValueError("Para una letra en pesos hace falta el dólar MEP histórico, que no está disponible ahora.")
+        h = historial_data912(info["px"])
+        sb = h.reindex(h.index.union(idx)).ffill().reindex(idx) / 100
+        sb = sb / mep_i if info["ars"] else sb
+        pos_venc = idx.searchsorted(pd.Timestamp(max(f for f, _ in info["flujos"])))
+        if pos_venc < len(idx):
+            sb.iloc[pos_venc:] = 0.0                      # vencido: ya no vale nada, el último pago se acreditó como efectivo
+        cols[k] = sb
+        for f, m in info["flujos"]:
+            fd_ = pd.Timestamp(f)
+            if fd_ < idx[0] or fd_ > idx[-1]:
+                continue
+            pos = idx.searchsorted(fd_)
+            pagos.iloc[pos, pagos.columns.get_loc(k)] += (m / 100) / (mep_i.iloc[pos] if info["ars"] else 1.0)
+    return pd.DataFrame(cols, index=idx), pagos
+
+
+def calcular_cartera(ops, close, mep=None, pagos=None):
     """Operaciones posteriores al último día con precios (hoy, un fin de semana) se aplican con el último precio disponible.
     ops: Fecha, Operación (Compra/Venta/Depósito/Retiro/Cambio), Ticker, Cantidad, Monto, Moneda, Ticker destino (solo Cambio).
     close: precios diarios en USD por ticker. mep: Serie con pesos por dólar (opcional).
@@ -593,6 +709,9 @@ def calcular_cartera(ops, close, mep=None):
                 m = o["Monto"] / mep.loc[d]
             cash.loc[d:] += sg * m
             flujo.loc[d] += sg * m
+    if pagos is not None:   # cupones y amortizaciones de bonos: entran como efectivo, no como aporte
+        p = pagos.reindex(index=idx, columns=close.columns).fillna(0.0)
+        cash = cash + (qty.shift(1).fillna(0.0) * p).sum(axis=1).cumsum()
     out = pd.DataFrame({"valor_usd": cash + (qty * close.reindex(idx)).sum(axis=1), "flujo_usd": flujo, "efectivo_usd": cash})
     if mep is not None:
         out["mep"] = mep
@@ -682,9 +801,9 @@ def historial_html(ed):
         if op in ("Depósito", "Retiro"):
             det, tipo = E.num(o["Monto"], 2, "US$ " if o["Moneda"] == "USD" else "$ "), "pur"
         elif op == "Cambio":
-            det, tipo = f"{E.num(o['Cantidad'], 2)} {E.esc(txt(o['Ticker']))} → {E.esc(txt(o['Ticker destino']))}", "sand"
+            det, tipo = f"{E.num(o['Cantidad'], 2)} {E.esc(nombre_activo(txt(o['Ticker'])))} → {E.esc(nombre_activo(txt(o['Ticker destino'])))}", "sand"
         else:
-            det, tipo = f"{E.num(o['Cantidad'], 2)} {E.esc(txt(o['Ticker']))}", "sand"
+            det, tipo = f"{E.num(o['Cantidad'], 2)} {E.esc(nombre_activo(txt(o['Ticker'])))}", "sand"
         rows.append([E.esc(o["_f"].strftime("%d/%m/%Y")), E.chip(op, tipo), f'<span class="strong">{det}</span>'])
     pie = f'<div class="sub" style="font-size:.85rem;margin-top:8px">Mostrando los últimos {min(20, len(d))} de {len(d)} movimientos.</div>'
     return E.tabla([("Fecha", "l"), ("Operación", "l"), ("Detalle", "l")], rows) + pie
@@ -772,23 +891,34 @@ def f_chip_real(v):
 
 
 def tabla_bonos(filas, flujos_por_id, key, liq, aviso_vacio, columnas):
-    """columnas: lista de (encabezado, clave, función de formato)."""
+    """columnas: lista de (encabezado, clave, función de formato). Un clic sobre el instrumento muestra sus fechas de pago."""
     if not filas:
         st.warning(aviso_vacio)
         return
     df = pd.DataFrame(filas).sort_values("Vencimiento").reset_index(drop=True)
-    ident = st.selectbox("Ver las fechas de pago de", list(df["Instrumento"]), key=key + "_sel")
+    ids = list(df["Instrumento"])
+    sel = st.session_state.get(key + "_sel_id")
+    if sel not in ids:
+        sel = ids[0]
     rows = []
     for _, r in df.iterrows():
         celdas = [E.activo(r["Instrumento"], r.get("Sub", ""), str(r["Instrumento"])[:2])]
         celdas += [fmt(r[clave]) if clave in r.index else "-" for _, clave, fmt in columnas]
         rows.append(celdas)
-    H(E.tabla([("Instrumento", "l")] + [(h, "l") for h, _, _ in columnas], rows, sel=list(df["Instrumento"]).index(ident)))
-    fl = [(f, m) for f, m in flujos_por_id[ident] if date.fromisoformat(f) > liq]
-    cron = [[f_fecha(f), E.num((date.fromisoformat(f) - liq).days, 0), f'<span class="strong">{E.num(m, 2)}</span>'] for f, m in fl]
-    H(f'<div class="eyebrow m" style="margin-top:22px">Fechas de pago</div><div class="h2" style="font-size:1.8rem">{E.esc(ident)}</div>'
-            + E.tabla([("Fecha de pago", "l"), ("Días desde la liquidación", "l"), ("Pago por 100 VN", "r")], cron))
-    st.caption("Para bonos que amortizan, cada pago mezcla cupón y devolución de capital.")
+    cols = [("Instrumento", "l")] + [(h, "l") for h, _, _ in columnas]
+    izq, der = st.columns([2.3, 1.1], gap="medium")
+    with izq:
+        H('<div class="sub" style="font-size:.9rem;margin:0 0 6px 4px">Hacé clic en un instrumento para ver sus fechas de pago.</div>')
+        clic = tabla_click(html=E.tabla(cols, rows, compacta=True, ids=ids), css=E.css_texto(), selected=sel,
+                           key=key + "_tabla", default=None)
+        if clic in ids:
+            sel = clic
+        st.session_state[key + "_sel_id"] = sel
+    with der:
+        fl = [(f, m) for f, m in flujos_por_id[sel] if date.fromisoformat(f) > liq]
+        cron = [[f_fecha(f), E.num((date.fromisoformat(f) - liq).days, 0, ""), f'<span class="strong">{E.num(m, 2)}</span>'] for f, m in fl]
+        H(E.cronograma_card(sel, df.loc[df["Instrumento"] == sel, "Sub"].iloc[0], cron))
+        st.caption("Para bonos que amortizan, cada pago mezcla cupón y devolución de capital. Días: desde la liquidación estimada.")
 
 
 # ----------------------------------------------------------------------------
@@ -856,6 +986,9 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 
 close, vol = precios(tuple(TICKERS))
 close = close.dropna(axis=1, how="all")
+if close.empty:
+    st.warning("No se pudieron obtener precios de Yahoo Finance en este momento. Recargá la página en unos minutos.")
+    st.stop()
 tabla = pd.DataFrame({
     "Nombre": [INFO[t][0] for t in close.columns],
     "Sector": [INFO[t][1] for t in close.columns],
@@ -1047,7 +1180,7 @@ with tab3:
             st.info("Ningún fondo cumple los filtros elegidos." if not modo_infl else
                     "Ningún fondo de esta categoría supera la inflación esperada con el rendimiento del período elegido.")
         else:
-            izq, der = st.columns([2.6, 1], gap="medium")
+            izq, der = st.columns([2.2, 1.2], gap="medium")
             nombres = list(top["fondo"])
             filas = []
             for _, x in top.iterrows():
@@ -1100,8 +1233,8 @@ with tab3:
                         svg = E.area_svg(acum, ref, uid="fci")
                 except Exception:
                     pass
-                extra = [("TNA del fondo (cap. diaria)", E.num(fila["tna_d"], 1, suf="%")),
-                         ("Plazo fijo equivalente (cap. cada 30 días)", E.num(fila["eq_tna"], 1, suf="%"))]
+                extra = [("TNA del fondo (capitaliza a diario)", E.num(fila["tna_d"], 1, suf="%")),
+                         ("Plazo fijo equivalente (capitaliza cada 30 días)", E.num(fila["eq_tna"], 1, suf="%"))]
                 if fila["usd"] == fila["usd"]:
                     extra.append((f"En USD (MEP), {dias} días", E.num(fila["usd"], 1, suf="%", signo=True)))
                 H(E.detalle_fondo(fila["base"], fila["sub"].strip(), E.color_de(fila["base"]), resc, minimo,
@@ -1330,7 +1463,8 @@ def preparar_ops(ed):
             ops[c] = None
     ops = ops.dropna(subset=["Fecha", "Operación"])
     for c in ("Ticker", "Ticker destino"):
-        ops[c] = ops[c].fillna("").astype(str).str.upper().str.strip()
+        ops[c] = ops[c].fillna("").astype(str).str.strip()
+        ops[c] = ops[c].where(ops[c].str.contains("|", regex=False), ops[c].str.upper())
     ops["Moneda"] = ops["Moneda"].fillna("USD")
     for c in ("Cantidad", "Monto"):
         ops[c] = pd.to_numeric(ops[c], errors="coerce")
@@ -1406,16 +1540,17 @@ with tab6:
     if not ops.empty and tickers:
         try:
             inicio = (pd.to_datetime(ops["Fecha"]).min() - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
-            close = precios_cartera(tuple(tickers), inicio)
+            try:
+                mep = mep_hist().set_index("fecha")["mep"]
+            except Exception:
+                mep = None
+            close, pagos = datos_cartera(tickers, inicio, mep)
             faltan = [t for t in tickers if t not in close.columns or close[t].dropna().empty]
             if faltan:
-                error = f"No encontré precios para: {', '.join(faltan)}. Usá el ticker de Nueva York (ej. AAPL)."
+                error = (f"No encontré precios para: {', '.join(nombre_activo(t) for t in faltan)}. Para acciones usá el ticker de Nueva York "
+                         "(ej. AAPL); los fondos y bonos salen de las listas del formulario.")
             else:
-                try:
-                    mep = mep_hist().set_index("fecha")["mep"]
-                except Exception:
-                    mep = None
-                res, qty = calcular_cartera(ops, close, mep)
+                res, qty = calcular_cartera(ops, close, mep, pagos)
         except ValueError as e:
             error = str(e)
         except Exception as e:
@@ -1426,30 +1561,62 @@ with tab6:
     # ---- Formulario para registrar movimientos ----
     with c_form:
         H('<div class="eyebrow m">Mi cartera</div><div class="h2">Agregar un movimiento</div>'
-                '<div class="sub" style="margin-bottom:12px">Depositá o retirá dinero, comprá, vendé o cambiá una acción por otra. '
-                'La tenencia actual se actualiza al instante.</div>')
-        tipo = st.segmented_control("¿Qué querés hacer?", ["Depositar dinero", "Retirar dinero", "Comprar acciones", "Vender acciones",
-                                                           "Cambiar una acción por otra"], default="Depositar dinero",
-                                    key="cart_tipo", label_visibility="collapsed") or "Depositar dinero"
+          '<div class="sub" style="margin-bottom:12px">Depositá o retirá dinero, y comprá, vendé o cambiá acciones, fondos (FCI) y bonos. '
+          'La tenencia actual se actualiza al instante.</div>')
+        tipo = st.segmented_control("¿Qué querés hacer?", ["Depositar dinero", "Retirar dinero", "Comprar", "Vender", "Cambiar uno por otro"],
+                                    default="Depositar dinero", key="cart_tipo", label_visibility="collapsed") or "Depositar dinero"
+        CLASES = ["Acción / CEDEAR", "Fondo (FCI)", "Bono / Letra / ON"]
+        clase = CLASES[0]
+        if tipo in ("Comprar", "Cambiar uno por otro"):
+            H('<div class="eyebrow m" style="margin:8px 0 6px">¿Qué querés comprar?</div>')
+            clase = st.segmented_control("Tipo de activo", CLASES, default=CLASES[0], key="cart_clase", label_visibility="collapsed") or CLASES[0]
+        UNIDAD = {CLASES[0]: "Cantidad de acciones", CLASES[1]: "Cantidad de cuotapartes", CLASES[2]: "Valor nominal (VN)"}
+
+        def selector_activo(contenedor, clave):
+            """Devuelve la clave interna del activo elegido (o None)."""
+            if clase == CLASES[1]:
+                try:
+                    nombres = sorted({v["nombre"] for v in detalle_fondos().values() if v.get("nombre")})
+                except Exception:
+                    contenedor.warning("No se pudo cargar la lista de fondos ahora.")
+                    return None
+                sel = contenedor.selectbox("Fondo", nombres, index=None, placeholder="Escribí para buscar un fondo...", key=clave)
+                return None if sel is None else ACT_FCI + sel
+            if clase == CLASES[2]:
+                try:
+                    cat = catalogo_bonos()
+                except Exception:
+                    contenedor.warning("No se pudo cargar la lista de bonos ahora.")
+                    return None
+                sel = contenedor.selectbox("Instrumento", list(cat), index=None, format_func=lambda k: cat[k]["etq"],
+                                           placeholder="Escribí para buscar un instrumento...", key=clave)
+                return None if sel is None else ACT_BONO + sel
+            t = contenedor.text_input("Ticker (de Nueva York)", placeholder="Ej: TSLA", key=clave)
+            return t.strip().upper() or None
+
         fila, falta = None, None
         with st.form("cart_form", clear_on_submit=True):
             fch = st.date_input("Fecha", value=hoy, max_value=hoy, format="DD/MM/YYYY")
             g1, g2 = st.columns(2)
+            tk = tk2 = None
+            cant = monto = 0.0
             if tipo in ("Depositar dinero", "Retirar dinero"):
                 monto = g1.number_input("Monto", min_value=0.0, step=100.0)
                 mon = g2.selectbox("Moneda", ["USD", "ARS"])
-            elif tipo == "Comprar acciones":
-                tk = g1.text_input("Ticker (de Nueva York)", placeholder="Ej: TSLA")
-                cant = g2.number_input("Cantidad", min_value=0.0, step=1.0)
+            elif tipo == "Comprar":
+                tk = selector_activo(g1, "cart_activo")
+                cant = g2.number_input(UNIDAD[clase], min_value=0.0, step=1.0)
                 st.caption("Se compra al precio de cierre del día. Si no tenés efectivo suficiente, primero depositá dinero.")
-            elif tipo == "Vender acciones":
-                tk = g1.selectbox("Acción que vendés", tenidas or ["(no tenés acciones)"])
-                cant = g2.number_input("Cantidad", min_value=0.0, step=1.0,
-                                       help=f"Tenés {ult_qty.get(tk, 0):,.4f}" if tenidas else None)
+            elif tipo == "Vender":
+                tk = g1.selectbox("Activo que vendés", tenidas or [None],
+                                  format_func=lambda k: "(todavía no tenés activos)" if k is None else nombre_activo(k))
+                cant = g2.number_input("Cantidad (acciones, cuotapartes o VN)", min_value=0.0, step=1.0,
+                                       help=f"Tenés {ult_qty.get(tk, 0):,.4f}" if tk is not None else None)
             else:
-                tk = g1.selectbox("Vendo", tenidas or ["(no tenés acciones)"])
+                tk = g1.selectbox("Vendo", tenidas or [None],
+                                  format_func=lambda k: "(todavía no tenés activos)" if k is None else nombre_activo(k))
                 cant = g2.number_input("Cantidad que vendo", min_value=0.0, step=1.0)
-                tk2 = st.text_input("Compro (ticker)", placeholder="Ej: TSLA")
+                tk2 = selector_activo(st, "cart_activo_destino")
                 st.caption("La compra se hace con lo que se obtiene de la venta, a los precios de cierre del día. "
                            "Después de agregarlo, la tenencia actual ya aparece cambiada.")
             enviar = st.form_submit_button("Agregar movimiento")
@@ -1460,23 +1627,23 @@ with tab6:
                     fila = {**base, "Operación": "Depósito" if tipo.startswith("Dep") else "Retiro", "Monto": monto, "Moneda": mon}
                 else:
                     falta = "Ingresá un monto mayor a 0."
-            elif tipo == "Comprar acciones":
-                if tk.strip() and cant > 0:
-                    fila = {**base, "Operación": "Compra", "Ticker": tk.strip().upper(), "Cantidad": cant}
+            elif tipo == "Comprar":
+                if tk and cant > 0:
+                    fila = {**base, "Operación": "Compra", "Ticker": tk, "Cantidad": cant}
                 else:
-                    falta = "Ingresá el ticker y una cantidad mayor a 0."
-            elif tipo == "Vender acciones":
+                    falta = "Elegí el activo e ingresá una cantidad mayor a 0."
+            elif tipo == "Vender":
                 if tk in tenidas and cant > 0:
                     fila = {**base, "Operación": "Venta", "Ticker": tk, "Cantidad": cant}
                 else:
-                    falta = "Elegí una acción que tengas e ingresá una cantidad mayor a 0."
+                    falta = "Elegí un activo que tengas e ingresá una cantidad mayor a 0."
             else:
-                if tk in tenidas and cant > 0 and tk2.strip():
-                    fila = {**base, "Operación": "Cambio", "Ticker": tk, "Cantidad": cant, "Ticker destino": tk2.strip().upper()}
+                if tk in tenidas and cant > 0 and tk2:
+                    fila = {**base, "Operación": "Cambio", "Ticker": tk, "Cantidad": cant, "Ticker destino": tk2}
                 else:
-                    falta = "Elegí la acción que vendés, la cantidad y el ticker de la que comprás."
-            if tipo in ("Vender acciones", "Cambiar una acción por otra") and fila and cant > ult_qty.get(tk, 0) + 1e-9:
-                st.warning(f"Estás vendiendo más de lo que tenés hoy de {tk} ({ult_qty.get(tk, 0):,.4f}). Se agrega igual; revisá la fecha.")
+                    falta = "Elegí el activo que vendés, la cantidad y el activo que comprás."
+            if tipo in ("Vender", "Cambiar uno por otro") and fila and cant > ult_qty.get(tk, 0) + 1e-9:
+                st.warning(f"Estás vendiendo más de lo que tenés hoy de {nombre_activo(tk)} ({ult_qty.get(tk, 0):,.4f}). Se agrega igual; revisá la fecha.")
             if falta:
                 st.error(falta)
             elif fila:
@@ -1510,6 +1677,7 @@ with tab6:
             ten = ten[ten["Cantidad"].abs() > 1e-9]
             ten.loc["Efectivo (USD)"] = [np.nan, np.nan, res["efectivo_usd"].iloc[-1]]
             ten["% de la cartera"] = ten["Valor USD"] / ten["Valor USD"].sum() * 100
+            ten.index = [nombre_activo(i) for i in ten.index]
             ten.index.name = "Activo"
             items = [(i, float(p)) for i, p in ten["% de la cartera"].items() if p > 0.05]
             composicion_st("¿Qué tenés hoy?", f"Tenencia al {res.index[-1]:%d/%m/%Y}: el resultado de aplicar todos los movimientos del historial.",
@@ -1572,8 +1740,10 @@ with tab6:
                 st.caption("**TWR** encadena el rendimiento de cada día quitando el efecto de los depósitos y retiros: mide si elegiste bien las acciones. "
                            "La **TIR del dinero** sí pesa cuándo pusiste cada monto (se calcula con 60 días o más). En pesos, el rendimiento incluye "
                            "lo que subió o bajó el dólar MEP. La línea del S&P 500 muestra qué habría pasado con los mismos aportes y retiros.")
-            st.caption("Compras, ventas y cambios al precio de cierre del día (o del siguiente día de mercado). Precios de Yahoo Finance en dólares. "
-                       "No incluye comisiones, impuestos ni dividendos. La conversión a pesos usa el dólar MEP de cada fecha.")
+            st.caption("Compras, ventas y cambios al precio de cierre del día (o del siguiente día de mercado). Acciones: Yahoo Finance en dólares. "
+                       "Fondos: valor de la cuotaparte según la CNV (datos semanales, interpolados entre fechas). Bonos y letras: cierre de data912 y "
+                       "pagos del cronograma cargado, que se acreditan como efectivo; es una aproximación. No incluye comisiones, impuestos ni dividendos. "
+                       "La conversión a pesos usa el dólar MEP de cada fecha.")
 
 st.divider()
 st.caption("Proyecto personal con fines informativos. No constituye asesoramiento financiero ni recomendación de inversión.")

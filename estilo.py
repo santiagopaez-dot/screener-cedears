@@ -41,14 +41,12 @@ html,body,.stApp,[class*="css"]{font-family:'Instrument Sans','Hanken Grotesk',s
 .stApp{background:radial-gradient(1100px 520px at 88% -8%,#EEE9F7 0%,transparent 62%),
 radial-gradient(900px 520px at -5% 0%,#FBEEE4 0%,transparent 58%),var(--bg)}
 header[data-testid="stHeader"]{background:transparent}
-.block-container{max-width:1300px;padding-top:2.4rem;padding-bottom:4rem}
+.block-container{max-width:1640px;padding:2.4rem 2.6rem 4rem}
 h1,h2,h3{letter-spacing:-0.02em;font-weight:500}
 /* pestañas */
-.stApp [data-baseweb="tab-list"]{gap:4px !important;background:#E9E3D8;padding:6px !important;border-radius:18px;width:fit-content;max-width:100%;overflow-x:auto}
-.stApp [data-baseweb="tab"]{border-radius:13px !important;padding:9px 18px !important;height:auto !important;font-weight:500;color:var(--suave)}
-.stApp [data-baseweb="tab"][aria-selected="true"]{background:var(--dark) !important;box-shadow:0 4px 14px rgba(42,36,32,.25)}
-.stApp [data-baseweb="tab"][aria-selected="true"],.stApp [data-baseweb="tab"][aria-selected="true"] *{color:#fff !important}
-.stApp [data-baseweb="tab-highlight"],.stApp [data-baseweb="tab-border"]{display:none !important}
+.stApp [role="tablist"]{gap:6px;filter:hue-rotate(268deg) saturate(.6) brightness(.8)}
+.stApp [role="tab"]{font-weight:500;padding:10px 16px;color:var(--suave)}
+.stApp [role="tab"][aria-selected="true"]{font-weight:700}
 /* El rojo de fábrica de Streamlit se rota a violeta (#6B4F9F): no depende de la estructura interna de cada control */
 .stApp [data-testid="stSlider"],.stApp [data-testid="stToggle"],.stApp [data-testid="stCheckbox"],
 .stApp [data-testid="stButtonGroup"] button{filter:hue-rotate(268deg) saturate(.6) brightness(.8)}
@@ -124,10 +122,10 @@ h1,h2,h3{letter-spacing:-0.02em;font-weight:500}
 /* banner / detalle */
 .hint{display:flex;align-items:center;gap:14px;padding:16px 20px;border-radius:20px;background:linear-gradient(90deg,#F1ECFA,#FBF7F0);border:1px solid #E6DDF3;margin:14px 0 22px}
 .hint .ic{width:42px;height:42px;border-radius:13px;background:#8C6FB3;color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex:none}
-.detail{background:linear-gradient(180deg,#F1ECFA 0%,#FFFEFA 38%);border:1px solid var(--borde);border-radius:28px;padding:24px;box-shadow:0 6px 24px rgba(60,40,20,.05)}
+.detail{min-width:0;background:linear-gradient(180deg,#F1ECFA 0%,#FFFEFA 38%);border:1px solid var(--borde);border-radius:28px;padding:24px;box-shadow:0 6px 24px rgba(60,40,20,.05)}
 .detail .eyebrow{color:#6A4FA0;font-weight:600}
-.mini-row{display:flex;gap:12px;margin:18px 0}
-.mini{flex:1;border:1px solid var(--borde);border-radius:18px;padding:13px 15px;background:#fff}
+.mini-row{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}
+.mini{flex:1 1 190px;border:1px solid var(--borde);border-radius:18px;padding:13px 15px;background:#fff}
 .mini small{color:var(--suave);font-size:.78rem}.mini div{font-size:1.25rem;font-weight:500;margin-top:5px}
 .row-sp{display:flex;justify-content:space-between;align-items:center}
 .lg{display:flex;gap:16px;font-size:.78rem;color:var(--suave);margin-top:6px}
@@ -298,6 +296,16 @@ def detalle_fondo(nombre, sub, color, rescate, minimo, rend_txt, rend_pos, svg, 
                      f'<div class="mini"><small>▣ Inversión mínima</small><div>{esc(minimo)}</div></div></div>{extras}{graf}</div>')
 
 
+def cronograma_card(nombre, sub, filas):
+    """Tarjeta del instrumento seleccionado con la lista de sus pagos. filas: [fecha, días, pago] en HTML."""
+    t = tabla([("Fecha de pago", "l"), ("Días", "r"), ("Pago por 100 VN", "r")], filas, compacta=True)
+    return compactar(f'<div class="detail"><span class="eyebrow">Seleccionado</span>'
+                     f'<div class="nm" style="margin:14px 0 10px">{avatar(str(nombre)[:2], color_de(nombre))}'
+                     f'<div><b style="font-size:1.25rem;font-weight:500">{esc(nombre)}</b><span>{esc(sub)}</span></div></div>'
+                     f'<div class="eyebrow m" style="margin:10px 0 8px">Fechas de pago</div>'
+                     f'<div style="max-height:460px;overflow:auto">{t}</div></div>')
+
+
 def donut(items, centro_n, centro_txt, size=270, radio=92, grosor=36):
     """items: lista de (etiqueta, porcentaje, color)."""
     c = size / 2
@@ -373,3 +381,53 @@ def meses(items):
         cols += (f'<div class="col"><small>{esc(m)}</small><div class="p {col}">{num(p, 2, suf="%", signo=True)}</div>'
                  f'<div class="area"><div class="bb {cls}" style="height:{h:.0f}px"></div></div><div class="vv">{esc(v)}</div></div>')
     return compactar(f'<div class="mm">{cols}</div>')
+
+
+COMPONENTE_TABLA_HTML = r"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style id="css-app"></style>
+<style>html,body{margin:0;background:transparent}#raiz{padding:6px 4px 10px}</style>
+</head>
+<body>
+<div id="raiz"></div>
+<script>
+// Componente mínimo de Streamlit: dibuja una tabla HTML y devuelve el id de la fila donde se hace clic.
+function enviar(tipo, extra) {
+  window.parent.postMessage(Object.assign({isStreamlitMessage: true, type: tipo}, extra || {}), "*");
+}
+function ajustarAltura() {
+  enviar("streamlit:setFrameHeight", {height: document.documentElement.scrollHeight});
+}
+var seleccionada = null;
+function marcar() {
+  document.querySelectorAll("tr[data-id]").forEach(function (tr) {
+    tr.classList.toggle("sel", tr.getAttribute("data-id") === seleccionada);
+  });
+}
+function dibujar(args) {
+  document.getElementById("css-app").textContent = args.css || "";
+  document.getElementById("raiz").innerHTML = args.html || "";
+  seleccionada = args.selected;
+  marcar();
+  document.querySelectorAll("tr[data-id]").forEach(function (tr) {
+    tr.addEventListener("click", function () {
+      seleccionada = tr.getAttribute("data-id");
+      marcar();
+      enviar("streamlit:setComponentValue", {value: seleccionada, dataType: "json"});
+    });
+  });
+  ajustarAltura();
+  setTimeout(ajustarAltura, 150);
+  setTimeout(ajustarAltura, 600);
+}
+window.addEventListener("message", function (ev) {
+  if (ev.data && ev.data.type === "streamlit:render") { dibujar(ev.data.args || {}); }
+});
+window.addEventListener("resize", ajustarAltura);
+enviar("streamlit:componentReady", {apiVersion: 1});
+</script>
+</body>
+</html>
+"""
