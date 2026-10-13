@@ -67,6 +67,12 @@ INFO = {
     "PATH": ('UiPath', 'Tecnología'), "UPST": ('Upstart', 'Tecnología'),
     "GRMN": ('Garmin', 'Tecnología'), "INFY": ('Infosys', 'Tecnología'),
     "CLS": ('Celestica', 'Tecnología'), "XYZ": ('Block', 'Tecnología'),
+    "ADBE": ('Adobe', 'Tecnología'), "ARM": ('Arm Holdings', 'Tecnología'),
+    "ASML": ('ASML', 'Tecnología'), "KLAC": ('KLA Corp', 'Tecnología'),
+    "AI": ('C3.ai', 'Tecnología'), "ALAB": ('Astera Labs', 'Tecnología'),
+    "BB": ('BlackBerry', 'Tecnología'), "FSLR": ('First Solar', 'Tecnología'),
+    "MSI": ('Motorola Solutions', 'Tecnología'), "XROX": ('Xerox', 'Tecnología'),
+    "IBKR": ('Interactive Brokers', 'Tecnología'),
     # Comunicación
     "GOOGL": ('Alphabet (Google)', 'Comunicación'), "META": ('Meta Platforms', 'Comunicación'),
     "NFLX": ('Netflix', 'Comunicación'), "DIS": ('Walt Disney', 'Comunicación'),
@@ -76,6 +82,10 @@ INFO = {
     "VOD": ('Vodafone', 'Comunicación'), "ROKU": ('Roku', 'Comunicación'),
     "PINS": ('Pinterest', 'Comunicación'), "YELP": ('Yelp', 'Comunicación'),
     "NTES": ('NetEase', 'Comunicación'), "ERIC": ('Ericsson', 'Comunicación'),
+    "EA": ('Electronic Arts', 'Comunicación'), "AMX": ('América Móvil', 'Comunicación'),
+    "ASTS": ('AST SpaceMobile', 'Comunicación'), "ORAN": ('Orange', 'Comunicación'),
+    "TIMB": ('TIM Brasil', 'Comunicación'), "TV": ('Grupo Televisa', 'Comunicación'),
+    "JOYY": ('JOYY', 'Comunicación'),
     # Consumo discrecional
     "AMZN": ('Amazon', 'Consumo discrecional'), "TSLA": ('Tesla', 'Consumo discrecional'),
     "MELI": ('MercadoLibre', 'Consumo discrecional'), "MCD": ("McDonald's", 'Consumo discrecional'),
@@ -95,7 +105,10 @@ INFO = {
     "URBN": ('Urban Outfitters', 'Consumo discrecional'), "HOG": ('Harley-Davidson', 'Consumo discrecional'),
     "CAR": ('Avis Budget', 'Consumo discrecional'), "SE": ('Sea Limited', 'Consumo discrecional'),
     "TCOM": ('Trip.com', 'Consumo discrecional'), "ARCO": ('Arcos Dorados', 'Consumo discrecional'),
-    "TTM": ('Tata Motors', 'Consumo discrecional'),
+    "TTM": ('Tata Motors', 'Consumo discrecional'), "CCL": ('Carnival', 'Consumo discrecional'),
+    "ETSY": ('Etsy', 'Consumo discrecional'), "NSAN": ('Nissan', 'Consumo discrecional'),
+    "XPEV": ('XPeng', 'Consumo discrecional'), "JMIA": ('Jumia', 'Consumo discrecional'),
+    "TRIP": ('Tripadvisor', 'Consumo discrecional'),
     # Consumo básico
     "PEP": ('PepsiCo', 'Consumo básico'), "WMT": ('Walmart', 'Consumo básico'),
     "PG": ('Procter & Gamble', 'Consumo básico'), "PM": ('Philip Morris', 'Consumo básico'),
@@ -104,7 +117,10 @@ INFO = {
     "ABEV": ('Ambev', 'Consumo básico'), "FMX": ('FEMSA', 'Consumo básico'),
     "UL": ('Unilever', 'Consumo básico'), "DEO": ('Diageo', 'Consumo básico'),
     "WBA": ('Walgreens', 'Consumo básico'), "KOFM": ('Coca-Cola FEMSA', 'Consumo básico'),
-    "UGP": ('Ultrapar', 'Consumo básico'),
+    "UGP": ('Ultrapar', 'Consumo básico'), "KO": ('Coca-Cola', 'Consumo básico'),
+    "CL": ('Colgate-Palmolive', 'Consumo básico'), "KMB": ('Kimberly-Clark', 'Consumo básico'),
+    "SYY": ('Sysco', 'Consumo básico'), "BRFS": ('BRF', 'Consumo básico'),
+    "LND": ('BrasilAgro', 'Consumo básico'),
     # Salud
     "JNJ": ('Johnson & Johnson', 'Salud'), "PFE": ('Pfizer', 'Salud'),
     "MRK": ('Merck', 'Salud'), "UNH": ('UnitedHealth', 'Salud'),
@@ -117,7 +133,8 @@ INFO = {
     "VRTX": ('Vertex Pharma', 'Salud'), "NVS": ('Novartis', 'Salud'),
     "NVO": ('Novo Nordisk', 'Salud'), "AZN": ('AstraZeneca', 'Salud'),
     "GSK": ('GSK', 'Salud'), "HIMS": ('Hims & Hers', 'Salud'),
-    "CAH": ('Cardinal Health', 'Salud'),
+    "CAH": ('Cardinal Health', 'Salud'), "PHG": ('Philips', 'Salud'),
+    "NTRA": ('Natera', 'Salud'),
     # Financiero
     "JPM": ('JPMorgan Chase', 'Financiero'), "V": ('Visa', 'Financiero'),
     "COIN": ('Coinbase', 'Financiero'), "PYPL": ('PayPal', 'Financiero'),
@@ -135,7 +152,10 @@ INFO = {
     "NMR": ('Nomura', 'Financiero'), "HDB": ('HDFC Bank', 'Financiero'),
     "IBN": ('ICICI Bank', 'Financiero'), "KB": ('KB Financial', 'Financiero'),
     "PAGS": ('PagSeguro', 'Financiero'), "XP": ('XP Inc', 'Financiero'),
-    "HOOD": ('Robinhood', 'Financiero'),
+    "HOOD": ('Robinhood', 'Financiero'), "AXP": ('American Express', 'Financiero'),
+    "AIG": ('AIG', 'Financiero'), "AEG": ('Aegon', 'Financiero'),
+    "BBV": ('BBVA', 'Financiero'), "BSBR": ('Santander Brasil', 'Financiero'),
+    "LFC": ('China Life', 'Financiero'),
     # Energía
     "XOM": ('Exxon Mobil', 'Energía'), "CVX": ('Chevron', 'Energía'),
     "SHEL": ('Shell', 'Energía'), "COP": ('ConocoPhillips', 'Energía'),
@@ -143,7 +163,9 @@ INFO = {
     "HAL": ('Halliburton', 'Energía'), "PBR": ('Petrobras', 'Energía'),
     "BKR": ('Baker Hughes', 'Energía'), "TTE": ('TotalEnergies', 'Energía'),
     "E": ('Eni', 'Energía'), "EQNR": ('Equinor', 'Energía'),
-    "VIST": ('Vista Energy', 'Energía'),
+    "VIST": ('Vista Energy', 'Energía'), "SLB": ('SLB (Schlumberger)', 'Energía'),
+    "PSX": ('Phillips 66', 'Energía'), "CCJ": ('Cameco', 'Energía'),
+    "GLNG": ('Golar LNG', 'Energía'), "GPRK": ('GeoPark', 'Energía'),
     # Industriales
     "BA": ('Boeing', 'Industriales'), "CAT": ('Caterpillar', 'Industriales'),
     "GE": ('General Electric', 'Industriales'), "HON": ('Honeywell', 'Industriales'),
@@ -153,7 +175,9 @@ INFO = {
     "EFX": ('Equifax', 'Industriales'), "JCI": ('Johnson Controls', 'Industriales'),
     "HWM": ('Howmet', 'Industriales'), "GEV": ('GE Vernova', 'Industriales'),
     "SNA": ('Snap-on', 'Industriales'), "GT": ('Goodyear', 'Industriales'),
-    "PCAR": ('Paccar', 'Industriales'),
+    "PCAR": ('Paccar', 'Industriales'), "ERJ": ('Embraer', 'Industriales'),
+    "RKLB": ('Rocket Lab', 'Industriales'), "ASR": ('Grupo Aeroportuario Sureste', 'Industriales'),
+    "PAC": ('Grupo Aeroportuario Pacífico', 'Industriales'),
     # Materiales
     "FCX": ('Freeport-McMoRan', 'Materiales'), "NUE": ('Nucor', 'Materiales'),
     "NEM": ('Newmont', 'Materiales'), "DOW": ('Dow Inc.', 'Materiales'),
@@ -166,10 +190,16 @@ INFO = {
     "GFI": ('Gold Fields', 'Materiales'), "MP": ('MP Materials', 'Materiales'),
     "IP": ('International Paper', 'Materiales'), "IFF": ('Intl Flavors & Fragrances', 'Materiales'),
     "SCCO": ('Southern Copper', 'Materiales'), "CX": ('Cemex', 'Materiales'),
-    "HMY": ('Harmony Gold', 'Materiales'),
+    "HMY": ('Harmony Gold', 'Materiales'), "ECL": ('Ecolab', 'Materiales'),
+    "AVY": ('Avery Dennison', 'Materiales'), "BAK": ('Braskem', 'Materiales'),
+    "CDE": ('Coeur Mining', 'Materiales'), "HL": ('Hecla Mining', 'Materiales'),
+    "NG": ('Novagold', 'Materiales'), "SUZ": ('Suzano', 'Materiales'),
+    "BIOX": ('Bioceres', 'Materiales'), "LAC": ('Lithium Americas', 'Materiales'),
     # Utilities
     "NEE": ('NextEra Energy', 'Utilities'), "CEG": ('Constellation Energy', 'Utilities'),
     "VST": ('Vistra', 'Utilities'), "NGG": ('National Grid', 'Utilities'),
+    "EBR": ('Eletrobras', 'Utilities'), "ELP": ('Copel', 'Utilities'),
+    "SBS": ('Sabesp', 'Utilities'),
     # Real Estate
     "PLD": ('Prologis', 'Real Estate'), "WELL": ('Welltower', 'Real Estate'),
     "O": ('Realty Income', 'Real Estate'),
@@ -1298,12 +1328,16 @@ with tab1:
     vol_min = c1.slider("Volatilidad mínima % (descarta las que casi no se mueven)", 0, 100, 30, step=5)
     filtro = c2.segmented_control("Mostrar", ["Todas", "Sobreventa", "Sobrecompra"], default="Todas", key="rsi_filtro") or "Todas"
 
-    t = tabla[(tabla["Volatilidad %"] >= vol_min) & tabla["Liquida"]]
-    if filtro == "Sobreventa":
-        t = t[(t["RSI diario"] < lo) | (t["RSI 45 min"] < lo)]
-    elif filtro == "Sobrecompra":
-        t = t[(t["RSI diario"] > hi) | (t["RSI 45 min"] > hi)]
-    t = filtro_busqueda(t, busqueda)
+    if busqueda.strip():
+        # Si buscás algo puntual, mostramos todo lo que coincida (ignora volatilidad y sobreventa,
+        # para que siempre lo encuentres aunque se mueva poco).
+        t = filtro_busqueda(tabla[tabla["Liquida"]], busqueda)
+    else:
+        t = tabla[(tabla["Volatilidad %"] >= vol_min) & tabla["Liquida"]]
+        if filtro == "Sobreventa":
+            t = t[(t["RSI diario"] < lo) | (t["RSI 45 min"] < lo)]
+        elif filtro == "Sobrecompra":
+            t = t[(t["RSI diario"] > hi) | (t["RSI 45 min"] > hi)]
 
     def _precio_cel(r):
         if r["Es AR"]:
@@ -1404,7 +1438,7 @@ with tab2:
     solo_pagan = st.toggle("Solo las que pagan dividendos", value=True)
 
     v = val[val["Liquida"]]
-    if solo_pagan:
+    if solo_pagan and not busqueda_d.strip():   # al buscar algo puntual, no escondas por "paga dividendos"
         v = v[v["Yield 12m %"] > 0]
     v = filtro_busqueda(v, busqueda_d)
 
