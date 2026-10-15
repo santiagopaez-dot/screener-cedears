@@ -332,13 +332,13 @@ def color_yield(v):
 # ----------------------------------------------------------------------------
 # Datos (con caché para no saturar las fuentes)
 # ----------------------------------------------------------------------------
-@st.cache_data(ttl=3600, show_spinner="Descargando precios de Nueva York...")
+@st.cache_data(persist="disk", ttl=3600, show_spinner="Descargando precios de Nueva York...")
 def precios(tickers):
     d = yf.download(list(tickers), period="1y", auto_adjust=True, progress=False)
     return d["Close"].ffill(), d["Volume"]
 
 
-@st.cache_data(ttl=1800, show_spinner="Descargando precios de CEDEARs en BYMA...")
+@st.cache_data(persist="disk", ttl=1800, show_spinner="Descargando precios de CEDEARs en BYMA...")
 def precios_cedear_ars(tickers):
     """Obtiene precio en ARS y volumen del CEDEAR en Buenos Aires (.BA)."""
     ba = [t + ".BA" for t in tickers]
@@ -360,7 +360,7 @@ def precios_cedear_ars(tickers):
         return pd.Series(dtype=float), pd.Series(dtype=float)
 
 
-@st.cache_data(ttl=3600, show_spinner="Descargando acciones argentinas...")
+@st.cache_data(persist="disk", ttl=3600, show_spinner="Descargando acciones argentinas...")
 def precios_ar(tickers):
     """Precio y volumen diarios (1 año) de acciones que cotizan solo en BYMA, en pesos."""
     ba = [t + ".BA" for t in tickers]
@@ -375,7 +375,7 @@ def precios_ar(tickers):
         return pd.DataFrame(), pd.DataFrame()
 
 
-@st.cache_data(ttl=6 * 3600, show_spinner="Descargando dividendos...")
+@st.cache_data(persist="disk", ttl=6 * 3600, show_spinner="Descargando dividendos...")
 def dividendos_12m(tickers):
     corte = pd.Timestamp.today() - pd.DateOffset(years=1)
     out = {}
@@ -390,7 +390,7 @@ def dividendos_12m(tickers):
     return out
 
 
-@st.cache_data(ttl=300, show_spinner="Descargando datos intradiarios...")
+@st.cache_data(persist="disk", ttl=300, show_spinner="Descargando datos intradiarios...")
 def rsi_45m(tickers, sufijo="", tz="America/New_York", inicio_min=570):
     """RSI(14) sobre velas de 45 min, armadas agrupando de a 3 velas de 15 min por rueda.
     sufijo: se agrega a cada ticker al pedirle a Yahoo (".BA" para BYMA). tz/inicio_min: huso horario
@@ -420,7 +420,7 @@ def rsi_45m(tickers, sufijo="", tz="America/New_York", inicio_min=570):
     return pd.Series(out), ultima
 
 
-@st.cache_data(ttl=6 * 3600, show_spinner="Descargando datos fundamentales...")
+@st.cache_data(persist="disk", ttl=6 * 3600, show_spinner="Descargando datos fundamentales...")
 def fundamentales(tickers):
     filas = []
     for t in tickers:
@@ -461,7 +461,7 @@ TIPOS_FCI = {"Mercado de dinero": "mercadoDinero", "Renta fija": "rentaFija",
              "Renta variable": "rentaVariable", "Renta mixta": "rentaMixta"}
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(persist="disk", ttl=3600, show_spinner=False)
 def fci_dia(tipo, fecha):
     """fecha: 'ultimo' o un date. Devuelve DataFrame (vacío si no hay datos)."""
     path = fecha if isinstance(fecha, str) else fecha.strftime("%Y/%m/%d")
@@ -482,7 +482,7 @@ def fci_cercano(tipo, objetivo):
     return pd.DataFrame()
 
 
-@st.cache_data(ttl=3600, show_spinner="Armando ranking de FCI...")
+@st.cache_data(persist="disk", ttl=3600, show_spinner="Armando ranking de FCI...")
 def ranking_fci(tipo, dias):
     hoy = fci_dia(tipo, "ultimo")
     if hoy.empty:
@@ -501,7 +501,7 @@ def ranking_fci(tipo, dias):
     return m
 
 
-@st.cache_data(ttl=6 * 3600, show_spinner=False)
+@st.cache_data(persist="disk", ttl=6 * 3600, show_spinner=False)
 def serie_deposito_30d():
     """Serie de tasas de depósitos a 30 días (promedio de bancos, BCRA): DataFrame con fecha y TNA %."""
     r = requests.get(f"{API}/tasas/depositos30Dias", timeout=20)
@@ -529,7 +529,7 @@ def norm_nombre(x):
     return re.sub(r"[^a-z0-9]+", "", x.lower())
 
 
-@st.cache_data(ttl=6 * 3600, show_spinner="Cargando detalle de los fondos...")
+@st.cache_data(persist="disk", ttl=6 * 3600, show_spinner="Cargando detalle de los fondos...")
 def detalle_fondos():
     """Todos los fondos con cartera, rescate, mínimo y honorarios (CNV vía ArgentinaDatos)."""
     r = requests.get(f"{API}/fci/fondos", timeout=60)
@@ -582,7 +582,7 @@ def detalle_completo(f):
         st.caption("Calificaciones: " + " · ".join(f"{x.get('calificadora', '')}: {x.get('calificacion', '')}" for x in cal))
 
 
-@st.cache_data(ttl=3600, show_spinner="Armando el gráfico del fondo...")
+@st.cache_data(persist="disk", ttl=3600, show_spinner="Armando el gráfico del fondo...")
 def serie_fondo(tipo, nombre, ini, fin, n=10):
     """Valor de la cuotaparte en n fechas entre ini y fin (para el gráfico del fondo)."""
     fechas = pd.date_range(ini, fin, periods=n).normalize()
@@ -646,7 +646,7 @@ def _limpia_fecha(serie):
     return serie
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(persist="disk", ttl=600, show_spinner=False)
 def panorama_mercado():
     """Lista de tarjetas (dict) para el carrusel: valor, variación y mini gráfico de ~30 puntos."""
     items, live, hist = [], {}, {}
@@ -717,7 +717,7 @@ def panorama_mercado():
     return items
 
 
-@st.cache_data(ttl=6 * 3600, show_spinner=False)
+@st.cache_data(persist="disk", ttl=6 * 3600, show_spinner=False)
 def dolar_hist(casa):
     r = requests.get(f"https://api.argentinadatos.com/v1/cotizaciones/dolares/{casa}", timeout=30)
     r.raise_for_status()
@@ -736,7 +736,7 @@ def mep_en(d, fecha):
     return float(sub["mep"].iloc[-1]) if len(sub) else np.nan
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(persist="disk", ttl=600, show_spinner=False)
 def ccl_referencia():
     """Dólar CCL de referencia (contado con liquidación) para comparar contra el CCL implícito."""
     try:
@@ -752,7 +752,7 @@ def ccl_referencia():
             return None
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(persist="disk", ttl=600, show_spinner=False)
 def cauciones_ars():
     """Tasas de cauciones en pesos por plazo (TNA). Devuelve dict plazo(días) -> TNA %."""
     try:
@@ -771,7 +771,7 @@ def cauciones_ars():
         return {}
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(persist="disk", ttl=1800, show_spinner=False)
 def bonos_cer():
     """Bonos CER (ajustan por inflación): ticker, precio ARS, TIR real % y vencimiento (ArgentinaDatos)."""
     try:
@@ -819,7 +819,7 @@ def _plano(x):
     return unicodedata.normalize("NFKD", str(x)).encode("ascii", "ignore").decode().lower()
 
 
-@st.cache_data(ttl=6 * 3600, show_spinner=False)
+@st.cache_data(persist="disk", ttl=6 * 3600, show_spinner=False)
 def rem_inflacion():
     """Inflación esperada anual según el último REM del BCRA. Devuelve (valor % anual o None, nota o None)."""
     try:
@@ -856,7 +856,7 @@ def rem_inflacion():
 # ----------------------------------------------------------------------------
 # Simulador de cartera: valor diario, rendimiento ajustado por aportes (TWR) y TIR del dinero (XIRR)
 # ----------------------------------------------------------------------------
-@st.cache_data(ttl=3600, show_spinner="Descargando precios de la cartera...")
+@st.cache_data(persist="disk", ttl=3600, show_spinner="Descargando precios de la cartera...")
 def precios_cartera(tickers, inicio):
     d = yf.download(list(tickers), start=inicio, auto_adjust=False, progress=False)["Close"]
     if isinstance(d, pd.Series):
@@ -890,7 +890,7 @@ def catalogo_bonos():
     return cat
 
 
-@st.cache_data(ttl=6 * 3600, show_spinner=False)
+@st.cache_data(persist="disk", ttl=6 * 3600, show_spinner=False)
 def historial_data912(ticker):
     """Cierre diario por 100 VN (data912, no tiempo real)."""
     r = requests.get(f"https://data912.com/historical/bonds/{ticker}", timeout=40)
@@ -909,7 +909,7 @@ def tipo_api_fci(fd):
     return "rentaFija"
 
 
-@st.cache_data(ttl=3600, show_spinner="Descargando la evolución del fondo...")
+@st.cache_data(persist="disk", ttl=3600, show_spinner="Descargando la evolución del fondo...")
 def vcp_fondo(tipos, nombre, ini, fin):
     """Valor de la cuotaparte en fechas semanales entre ini y fin (se interpola entre fechas)."""
     fechas = sorted({f.normalize() for f in list(pd.date_range(ini, fin, freq="7D")) + [pd.Timestamp(fin)]})
@@ -1052,7 +1052,7 @@ def xirr(fechas, flujos, valor_final, fecha_final):
     return (lo + hi) / 2
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(persist="disk", ttl=3600, show_spinner=False)
 def precios_indice(inicio):
     d = yf.download("^GSPC", start=inicio, auto_adjust=True, progress=False)["Close"].squeeze().dropna()
     return _limpia_fecha(d.copy())
@@ -1121,12 +1121,12 @@ def historial_html(ed):
 # ----------------------------------------------------------------------------
 # Renta fija: cronogramas (archivo del repo) y precios en vivo (data912)
 # ----------------------------------------------------------------------------
-@st.cache_data(ttl=3600)
+@st.cache_data(persist="disk", ttl=3600)
 def cargar_cronogramas():
     return json.loads((Path(__file__).parent / "cronogramas.json").read_text(encoding="utf-8"))
 
 
-@st.cache_data(ttl=600, show_spinner="Descargando precios de letras, bonos y ONs...")
+@st.cache_data(persist="disk", ttl=600, show_spinner="Descargando precios de letras, bonos y ONs...")
 def precios_renta_fija():
     """Precio por símbolo desde data912 (no es tiempo real). Usa punto medio si el spread es chico, si no el último."""
     out, paneles_ok = {}, []
