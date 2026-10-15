@@ -162,6 +162,24 @@ h1,h2,h3{letter-spacing:-0.02em;font-weight:500}
 .mm .col .bb.n{background:linear-gradient(180deg,#C45555,#E5A9A5)}
 .mm .col .vv{font-size:.74rem;color:var(--suave);margin-top:8px}
 @media (max-width:900px){.kpis{flex-wrap:wrap}.kpi{flex:1 1 45%}.hero h1{font-size:2.3rem}.comp{flex-direction:column}.hero{flex-direction:column;align-items:flex-start}.strip{flex-wrap:wrap}.cell{flex:1 1 45%}}
+@media (max-width:600px){
+  .block-container{padding:1rem .8rem 2.4rem !important}
+  .kpi{flex:1 1 100% !important}.cell{flex:1 1 100% !important}
+  .hero h1{font-size:1.9rem}
+  /* En celular las tablas compactas no se aplastan: letra chica + scroll horizontal */
+  .tbl.cmp th,.tbl.cmp td{white-space:nowrap}
+  .tbl td,.tbl th{padding:11px 12px;font-size:.9rem}
+  .tbl.cmp td,.tbl.cmp th{padding:8px 6px;font-size:.78rem}
+  /* Trading: ocultar columnas accesorias (Vol. BYMA y Volatilidad) para que entren Activo/Precio/RSI */
+  .t-trading th:nth-child(3),.t-trading td:nth-child(3),
+  .t-trading th:nth-child(4),.t-trading td:nth-child(4){display:none}
+  /* Dividendos: ocultar P/E, P/E vs sector, ROE, Deuda/EBITDA y Rango; dejar lo esencial */
+  .t-div th:nth-child(5),.t-div td:nth-child(5),
+  .t-div th:nth-child(6),.t-div td:nth-child(6),
+  .t-div th:nth-child(7),.t-div td:nth-child(7),
+  .t-div th:nth-child(8),.t-div td:nth-child(8),
+  .t-div th:nth-child(9),.t-div td:nth-child(9){display:none}
+}
 """
 
 
@@ -232,17 +250,19 @@ def rsi_pill(v, lo=30, hi=70):
             f'<div class="bar"><i style="width:{ancho:.0f}%"></i></div></div>')
 
 
-def tabla(headers, filas, sel=None, compacta=False, ids=None):
+def tabla(headers, filas, sel=None, compacta=False, ids=None, clase=""):
     """headers: lista de (texto, 'l'|'r'|'w'). filas: lista de listas de HTML de celda.
-    compacta: letra y espacios más chicos. ids: un identificador por fila (para tablas clicables)."""
+    compacta: letra y espacios más chicos. ids: un identificador por fila (para tablas clicables).
+    clase: clase CSS extra en la tabla (sirve para ocultar columnas accesorias en celular)."""
     th = "".join(f'<th class="{a if a in ("r", "w") else ""}">{esc(t)}</th>' for t, a in headers)
     trs = ""
     for i, f in enumerate(filas):
         tds = "".join(f'<td class="{headers[j][1] if headers[j][1] in ("r", "w") else ""}">{c}</td>' for j, c in enumerate(f))
-        clase = ("sel" if sel == i else "") + (" clk" if ids else "")
+        cl = ("sel" if sel == i else "") + (" clk" if ids else "")
         attr = f' data-id="{esc(ids[i])}"' if ids else ""
-        trs += f'<tr class="{clase.strip()}"{attr}>{tds}</tr>'
-    return compactar(f'<div class="panel" style="overflow-x:auto"><table class="tbl{" cmp" if compacta else ""}"><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table></div>')
+        trs += f'<tr class="{cl.strip()}"{attr}>{tds}</tr>'
+    clases = "tbl" + (" cmp" if compacta else "") + (f" {clase}" if clase else "")
+    return compactar(f'<div class="panel" style="overflow-x:auto"><table class="{clases}"><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table></div>')
 
 
 def variacion_chip(pct):

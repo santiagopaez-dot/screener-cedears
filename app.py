@@ -1491,7 +1491,7 @@ with tab1:
                       _precio_cel(r), _vol_byma(r),
                       E.num(r["Volatilidad %"], 2, suf="%"), E.rsi_pill(r["RSI diario"], lo, hi), E.rsi_pill(r["RSI 45 min"], lo, hi)]
                      for tk, r in sub.iterrows()]
-            H(E.variacion_chip(sub["Var. diaria %"].mean()) + E.tabla(COLS_TRAD, filas))
+            H(E.variacion_chip(sub["Var. diaria %"].mean()) + E.tabla(COLS_TRAD, filas, clase="t-trading"))
 
     # Favoritas primero (respetan la búsqueda, pero no el resto de filtros: siempre visibles,
     # salvo las que no tienen CEDEAR/cotización local, que nunca se muestran)
@@ -1591,7 +1591,7 @@ with tab2:
                       E.num(r["P/E vs sector"], 2, suf="x"), chip_roe(r["ROE %"]), chip_deuda(r["Deuda/EBITDA"]),
                       barra_rango(r["Posición rango 52 sem. %"]), chip_veredicto(r["Veredicto"])]
                      for tk, r in sub.iterrows()]
-            H(E.tabla(COLS_DIV, filas, compacta=True))
+            H(E.tabla(COLS_DIV, filas, compacta=True, clase="t-div"))
 
     # Favoritas primero (las que pasan el filtro de liquidez y la búsqueda)
     fav_dv = filtro_busqueda(v[v.index.isin(favs_d)], busqueda_d)
