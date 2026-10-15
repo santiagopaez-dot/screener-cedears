@@ -54,25 +54,24 @@ INFO = {
     "DELL": ('Dell', 'Tecnología'), "HPQ": ('HP', 'Tecnología'),
     "RBLX": ('Roblox', 'Tecnología'), "ZM": ('Zoom', 'Tecnología'),
     "TSM": ('Taiwan Semiconductor', 'Tecnología'), "SAP": ('SAP', 'Tecnología'),
-    "SONY": ('Sony', 'Tecnología'), "MSTR": ('MicroStrategy', 'Tecnología'),
-    "SNOW": ('Snowflake', 'Tecnología'), "PANW": ('Palo Alto Networks', 'Tecnología'),
-    "CRWD": ('CrowdStrike', 'Tecnología'), "ADI": ('Analog Devices', 'Tecnología'),
-    "LRCX": ('Lam Research', 'Tecnología'), "AMAT": ('Applied Materials', 'Tecnología'),
-    "MRVL": ('Marvell', 'Tecnología'), "ANET": ('Arista Networks', 'Tecnología'),
-    "GLOB": ('Globant', 'Tecnología'), "ACN": ('Accenture', 'Tecnología'),
-    "ADP": ('ADP', 'Tecnología'), "VRSN": ('Verisign', 'Tecnología'),
-    "SWKS": ('Skyworks', 'Tecnología'), "WDC": ('Western Digital', 'Tecnología'),
-    "GLW": ('Corning', 'Tecnología'), "TWLO": ('Twilio', 'Tecnología'),
-    "DOCU": ('DocuSign', 'Tecnología'), "TEAM": ('Atlassian', 'Tecnología'),
-    "PATH": ('UiPath', 'Tecnología'), "UPST": ('Upstart', 'Tecnología'),
-    "GRMN": ('Garmin', 'Tecnología'), "INFY": ('Infosys', 'Tecnología'),
-    "CLS": ('Celestica', 'Tecnología'), "XYZ": ('Block', 'Tecnología'),
-    "ADBE": ('Adobe', 'Tecnología'), "ARM": ('Arm Holdings', 'Tecnología'),
-    "ASML": ('ASML', 'Tecnología'), "KLAC": ('KLA Corp', 'Tecnología'),
-    "AI": ('C3.ai', 'Tecnología'), "ALAB": ('Astera Labs', 'Tecnología'),
-    "BB": ('BlackBerry', 'Tecnología'), "FSLR": ('First Solar', 'Tecnología'),
-    "MSI": ('Motorola Solutions', 'Tecnología'), "XROX": ('Xerox', 'Tecnología'),
-    "IBKR": ('Interactive Brokers', 'Tecnología'),
+    "SONY": ('Sony', 'Tecnología'), "SNOW": ('Snowflake', 'Tecnología'),
+    "PANW": ('Palo Alto Networks', 'Tecnología'), "CRWD": ('CrowdStrike', 'Tecnología'),
+    "ADI": ('Analog Devices', 'Tecnología'), "LRCX": ('Lam Research', 'Tecnología'),
+    "AMAT": ('Applied Materials', 'Tecnología'), "MRVL": ('Marvell', 'Tecnología'),
+    "ANET": ('Arista Networks', 'Tecnología'), "GLOB": ('Globant', 'Tecnología'),
+    "ACN": ('Accenture', 'Tecnología'), "ADP": ('ADP', 'Tecnología'),
+    "VRSN": ('Verisign', 'Tecnología'), "SWKS": ('Skyworks', 'Tecnología'),
+    "WDC": ('Western Digital', 'Tecnología'), "GLW": ('Corning', 'Tecnología'),
+    "TWLO": ('Twilio', 'Tecnología'), "DOCU": ('DocuSign', 'Tecnología'),
+    "TEAM": ('Atlassian', 'Tecnología'), "PATH": ('UiPath', 'Tecnología'),
+    "UPST": ('Upstart', 'Tecnología'), "GRMN": ('Garmin', 'Tecnología'),
+    "INFY": ('Infosys', 'Tecnología'), "CLS": ('Celestica', 'Tecnología'),
+    "XYZ": ('Block', 'Tecnología'), "ADBE": ('Adobe', 'Tecnología'),
+    "ARM": ('Arm Holdings', 'Tecnología'), "ASML": ('ASML', 'Tecnología'),
+    "KLAC": ('KLA Corp', 'Tecnología'), "AI": ('C3.ai', 'Tecnología'),
+    "ALAB": ('Astera Labs', 'Tecnología'), "BB": ('BlackBerry', 'Tecnología'),
+    "FSLR": ('First Solar', 'Tecnología'), "MSI": ('Motorola Solutions', 'Tecnología'),
+    "XROX": ('Xerox', 'Tecnología'), "IBKR": ('Interactive Brokers', 'Tecnología'),
     # Comunicación
     "GOOGL": ('Alphabet (Google)', 'Comunicación'), "META": ('Meta Platforms', 'Comunicación'),
     "NFLX": ('Netflix', 'Comunicación'), "DIS": ('Walt Disney', 'Comunicación'),
@@ -137,25 +136,24 @@ INFO = {
     "NTRA": ('Natera', 'Salud'),
     # Financiero
     "JPM": ('JPMorgan Chase', 'Financiero'), "V": ('Visa', 'Financiero'),
-    "COIN": ('Coinbase', 'Financiero'), "PYPL": ('PayPal', 'Financiero'),
-    "BAC": ('Bank of America', 'Financiero'), "WFC": ('Wells Fargo', 'Financiero'),
-    "GS": ('Goldman Sachs', 'Financiero'), "MS": ('Morgan Stanley', 'Financiero'),
-    "MA": ('Mastercard', 'Financiero'), "C": ('Citigroup', 'Financiero'),
-    "SCHW": ('Charles Schwab', 'Financiero'), "HSBC": ('HSBC', 'Financiero'),
-    "STNE": ('StoneCo', 'Financiero'), "USB": ('US Bancorp', 'Financiero'),
-    "BK": ('Bank of NY Mellon', 'Financiero'), "SPGI": ('S&P Global', 'Financiero'),
-    "ITUB": ('Itaú Unibanco', 'Financiero'), "BBD": ('Banco Bradesco', 'Financiero'),
-    "NU": ('Nu Holdings', 'Financiero'), "BX": ('Blackstone', 'Financiero'),
-    "MMC": ('Marsh McLennan', 'Financiero'), "ING": ('ING Group', 'Financiero'),
-    "SAN": ('Banco Santander', 'Financiero'), "BCS": ('Barclays', 'Financiero'),
-    "MUFG": ('Mitsubishi UFJ', 'Financiero'), "MFG": ('Mizuho', 'Financiero'),
-    "NMR": ('Nomura', 'Financiero'), "HDB": ('HDFC Bank', 'Financiero'),
-    "IBN": ('ICICI Bank', 'Financiero'), "KB": ('KB Financial', 'Financiero'),
-    "PAGS": ('PagSeguro', 'Financiero'), "XP": ('XP Inc', 'Financiero'),
-    "HOOD": ('Robinhood', 'Financiero'), "AXP": ('American Express', 'Financiero'),
-    "AIG": ('AIG', 'Financiero'), "AEG": ('Aegon', 'Financiero'),
-    "BBV": ('BBVA', 'Financiero'), "BSBR": ('Santander Brasil', 'Financiero'),
-    "LFC": ('China Life', 'Financiero'),
+    "PYPL": ('PayPal', 'Financiero'), "BAC": ('Bank of America', 'Financiero'),
+    "WFC": ('Wells Fargo', 'Financiero'), "GS": ('Goldman Sachs', 'Financiero'),
+    "MS": ('Morgan Stanley', 'Financiero'), "MA": ('Mastercard', 'Financiero'),
+    "C": ('Citigroup', 'Financiero'), "SCHW": ('Charles Schwab', 'Financiero'),
+    "HSBC": ('HSBC', 'Financiero'), "STNE": ('StoneCo', 'Financiero'),
+    "USB": ('US Bancorp', 'Financiero'), "BK": ('Bank of NY Mellon', 'Financiero'),
+    "SPGI": ('S&P Global', 'Financiero'), "ITUB": ('Itaú Unibanco', 'Financiero'),
+    "BBD": ('Banco Bradesco', 'Financiero'), "NU": ('Nu Holdings', 'Financiero'),
+    "BX": ('Blackstone', 'Financiero'), "MMC": ('Marsh McLennan', 'Financiero'),
+    "ING": ('ING Group', 'Financiero'), "SAN": ('Banco Santander', 'Financiero'),
+    "BCS": ('Barclays', 'Financiero'), "MUFG": ('Mitsubishi UFJ', 'Financiero'),
+    "MFG": ('Mizuho', 'Financiero'), "NMR": ('Nomura', 'Financiero'),
+    "HDB": ('HDFC Bank', 'Financiero'), "IBN": ('ICICI Bank', 'Financiero'),
+    "KB": ('KB Financial', 'Financiero'), "PAGS": ('PagSeguro', 'Financiero'),
+    "XP": ('XP Inc', 'Financiero'), "HOOD": ('Robinhood', 'Financiero'),
+    "AXP": ('American Express', 'Financiero'), "AIG": ('AIG', 'Financiero'),
+    "AEG": ('Aegon', 'Financiero'), "BBV": ('BBVA', 'Financiero'),
+    "BSBR": ('Santander Brasil', 'Financiero'), "LFC": ('China Life', 'Financiero'),
     # Energía
     "XOM": ('Exxon Mobil', 'Energía'), "CVX": ('Chevron', 'Energía'),
     "SHEL": ('Shell', 'Energía'), "COP": ('ConocoPhillips', 'Energía'),
@@ -203,6 +201,13 @@ INFO = {
     # Real Estate
     "PLD": ('Prologis', 'Real Estate'), "WELL": ('Welltower', 'Real Estate'),
     "O": ('Realty Income', 'Real Estate'),
+    # Cripto
+    "MSTR": ('MicroStrategy', 'Cripto'), "COIN": ('Coinbase', 'Cripto'),
+    "IBIT": ('iShares Bitcoin Trust (BTC)', 'Cripto'), "ETHA": ('iShares Ethereum Trust (ETH)', 'Cripto'),
+    "HUT": ('Hut 8 (minería BTC)', 'Cripto'), "RIOT": ('Riot Platforms (minería BTC)', 'Cripto'),
+    "IREN": ('IREN (minería BTC)', 'Cripto'), "BMNR": ('Bitmine Immersion', 'Cripto'),
+    # ETF temático
+    "URA": ('Global X Uranium ETF', 'ETF temático'),
 }
 TICKERS = list(INFO)
 
@@ -225,6 +230,19 @@ INFO_AR = {
     "MOLI": ("Molinos Río de la Plata", "Consumo básico"), "LEDE": ("Ledesma", "Consumo básico"),
 }
 TICKERS_AR = list(INFO_AR)
+
+# Ratio de conversión de los CEDEARs (cuántos CEDEARs equivalen a 1 acción en Nueva York).
+# Se usa SOLO para el dólar CCL implícito. Fuente: tabla sincronizada con BYMA (sep-2026).
+# ¡Verificá contra tu broker! Cambian por splits o ajustes del emisor. Si falta un ratio acá,
+# ese CEDEAR simplemente no muestra CCL implícito (no se inventa).
+RATIOS_CEDEAR = {
+    "AAPL": 20, "MSFT": 30, "NVDA": 24, "AMD": 10, "GOOGL": 58, "META": 24, "AMZN": 144,
+    "TSLA": 15, "MELI": 120, "KO": 5, "DIS": 12, "NFLX": 48, "BABA": 9, "JPM": 15, "V": 18,
+    "MA": 33, "WMT": 18, "NKE": 12, "SBUX": 12, "MCD": 24, "PBR": 1, "VALE": 2, "JNJ": 15,
+    "PFE": 4, "XOM": 10, "CVX": 16, "BA": 24, "INTC": 5, "QCOM": 11, "PYPL": 8, "CAT": 20,
+    "IBM": 15, "ORCL": 3, "CSCO": 5, "PG": 15, "HD": 32, "C": 3, "GS": 13, "MU": 5,
+    "COIN": 27, "MSTR": 20, "GLOB": 18, "VIST": 3, "TSM": 9, "AVGO": 39,
+}
 
 # Parámetros fijos (no se muestran en pantalla)
 RSI_BAJO, RSI_ALTO = 30, 70      # verde (sobreventa) / rojo (sobrecompra)
@@ -588,6 +606,23 @@ def torta_alt(items, colores, alto=260):
     return (arco + centro + chico).properties(height=alto, width=alto).configure_view(strokeWidth=0)
 
 
+def scatter_curva(df):
+    """Dispersión TIR (eje Y) vs duración modificada (eje X), coloreada por tipo de instrumento.
+    Traza la 'curva' de rendimientos: lo que queda por encima rinde más para su plazo (a revisar)."""
+    base = alt.Chart(df).encode(
+        x=alt.X("Duración:Q", title="Duración modificada (años)", scale=alt.Scale(zero=False, nice=True)),
+        y=alt.Y("TIR:Q", title="TIR (TEA %)", scale=alt.Scale(zero=False, nice=True)),
+        color=alt.Color("Tipo:N", scale=alt.Scale(domain=["Soberano", "ON"], range=["#6A4FA0", "#C98A5E"]),
+                        legend=alt.Legend(title=None, orient="top")),
+        tooltip=[alt.Tooltip("Instrumento:N", title="Instrumento"),
+                 alt.Tooltip("TIR:Q", format=".1f", title="TIR %"),
+                 alt.Tooltip("Duración:Q", format=".2f", title="Dur. mod.")])
+    puntos = base.mark_circle(size=130, opacity=0.85, stroke="#FFFEFA", strokeWidth=1)
+    etiquetas = base.mark_text(align="left", dx=7, dy=-4, fontSize=10, color="#2A2420").encode(text="Instrumento:N")
+    return (puntos + etiquetas).properties(height=380).configure_view(strokeWidth=0).configure_axis(
+        grid=True, gridColor="#E7E0D5", labelColor="#8A7A6C", titleColor="#6A5B4F")
+
+
 def composicion_st(titulo, descripcion, items, eyebrow, key):
     """Tarjeta con la leyenda a la izquierda y la torta a la derecha."""
     items, colores = E.composicion_datos(items)
@@ -699,6 +734,61 @@ def mep_hist():
 def mep_en(d, fecha):
     sub = d[d["fecha"] <= fecha]
     return float(sub["mep"].iloc[-1]) if len(sub) else np.nan
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def ccl_referencia():
+    """Dólar CCL de referencia (contado con liquidación) para comparar contra el CCL implícito."""
+    try:
+        r = requests.get("https://dolarapi.com/v1/dolares/contadoconliqui", timeout=15)
+        r.raise_for_status()
+        d = r.json()
+        return float(d.get("venta") or d.get("compra"))
+    except Exception:
+        try:
+            h = dolar_hist("contadoconliqui")
+            return float(h["valor"].iloc[-1]) if len(h) else None
+        except Exception:
+            return None
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def cauciones_ars():
+    """Tasas de cauciones en pesos por plazo (TNA). Devuelve dict plazo(días) -> TNA %."""
+    try:
+        r = requests.get(f"{API}/finanzas/cauciones/ars", timeout=20)
+        r.raise_for_status()
+        out = {}
+        for x in r.json():
+            try:
+                pl = int(x["plazo"]); ta = float(x["tasaActual"])
+                if ta > 0:
+                    out[pl] = ta
+            except Exception:
+                continue
+        return out
+    except Exception:
+        return {}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def bonos_cer():
+    """Bonos CER (ajustan por inflación): ticker, precio ARS, TIR real % y vencimiento (ArgentinaDatos)."""
+    try:
+        r = requests.get(f"{API}/finanzas/bonos-cer", timeout=25)
+        r.raise_for_status()
+        d = r.json()
+        filas = []
+        for b in d.get("bonos", []):
+            try:
+                filas.append({"Instrumento": b["ticker"], "Precio ARS": float(b["precioArs"]),
+                              "TIR real %": float(b["tirPorcentaje"]), "Vencimiento": b["fechaVencimiento"],
+                              "Volumen": float(b.get("volumen") or 0)})
+            except Exception:
+                continue
+        return pd.DataFrame(filas), d.get("fechaActualizacion", "")
+    except Exception:
+        return pd.DataFrame(), ""
 
 
 OBJ = ["Ver todo", "Guardar a corto plazo", "Ganarle a la inflación"]
@@ -1312,6 +1402,14 @@ tabla["Liquida"] = tabla["Tiene CEDEAR"] & np.where(
     tabla["Es AR"], tabla["Volumen USD (M)"] >= MIN_VOLUMEN_USD_M_AR,
     tabla["Volumen USD (M)"] >= MIN_VOLUMEN_USD_M)
 
+# Dólar CCL implícito por CEDEAR = Precio ARS × ratio / Precio USD. Solo para los que tienen ratio
+# cargado y no son acciones argentinas. Desvío = cuánto se aparta del CCL de referencia.
+CCL_REF = ccl_referencia()
+tabla["Ratio"] = [np.nan if es_ar else RATIOS_CEDEAR.get(t, np.nan)
+                  for t, es_ar in zip(tabla.index, tabla["Es AR"])]
+tabla["CCL implícito"] = tabla["Precio ARS"] * tabla["Ratio"] / tabla["Precio USD"]
+tabla["Desvío CCL %"] = (tabla["CCL implícito"] / CCL_REF - 1) * 100 if CCL_REF else np.nan
+
 # --- 1. CEDEARs: trading ------------------------------------------------------
 with tab1:
     H('<div class="eyebrow m">CEDEARs · Trading</div><div class="h2">RSI diario y de 45 minutos</div>')
@@ -1327,6 +1425,33 @@ with tab1:
     c1, c2 = st.columns([2, 3], vertical_alignment="bottom")
     vol_min = c1.slider("Volatilidad mínima % (descarta las que casi no se mueven)", 0, 100, 30, step=5)
     filtro = c2.segmented_control("Mostrar", ["Todas", "Sobreventa", "Sobrecompra"], default="Todas", key="rsi_filtro") or "Todas"
+
+    # --- Dólar CCL implícito y brecha ---
+    ccl_tab = tabla[tabla["Ratio"].notna() & tabla["CCL implícito"].notna() & tabla["Liquida"]].copy()
+    if CCL_REF and len(ccl_tab):
+        with st.expander(f"💱 Dólar CCL implícito y brecha · referencia CCL ${E.num(CCL_REF, 0)}", expanded=False):
+            st.caption("El CCL implícito es el dólar que te queda comprando la acción afuera y vendiendo el CEDEAR acá "
+                       "(Precio ARS × ratio ÷ Precio USD). Si está **por encima** del CCL de referencia, el CEDEAR está caro "
+                       "(conviene vender CEDEAR / comprar afuera); si está **por debajo**, está barato. Ordenado por desvío. "
+                       "Los ratios están cargados a mano (sincronizados con BYMA a sep-2026): verificalos en tu broker.")
+            orden_ccl = st.radio("Ordenar", ["Mayor sobreprecio", "Mayor descuento", "Alfabético"],
+                                 horizontal=True, key="ccl_orden", label_visibility="collapsed")
+            cc = ccl_tab.sort_values("Desvío CCL %", ascending=(orden_ccl != "Mayor sobreprecio"))
+            if orden_ccl == "Alfabético":
+                cc = ccl_tab.sort_values("Nombre")
+            def _desvio_chip(d):
+                if pd.isna(d):
+                    return "-"
+                tipo = "down" if d > 0.3 else ("up" if d < -0.3 else "flat")  # caro=rojo, barato=verde
+                signo = "+" if d > 0 else ""
+                return E.chip(f"{signo}{E.num(d, 2, suf='%')}", tipo)
+            filas_ccl = [[E.activo(r["Nombre"], tk, tk[:2]),
+                          E.num(r["Precio USD"], 2, "US$ "), E.num(r["Precio ARS"], 0, "AR$ "),
+                          E.num(r["Ratio"], 0, suf=":1"), E.num(r["CCL implícito"], 0, "$ "),
+                          _desvio_chip(r["Desvío CCL %"])]
+                         for tk, r in cc.iterrows()]
+            H(E.tabla([("Activo", "l"), ("Precio USD", "l"), ("Precio CEDEAR", "l"), ("Ratio", "l"),
+                       ("CCL implícito", "l"), ("Desvío vs CCL", "l")], filas_ccl, compacta=True))
 
     if busqueda.strip():
         # Si buscás algo puntual, mostramos todo lo que coincida (ignora volatilidad y sobreventa,
@@ -1564,6 +1689,24 @@ with tab3:
             r = r[(r["base"] + " " + r["sub"]).map(_plano).str.contains(q, regex=False)]
         top = r.head(30)
 
+        # Cauciones: piso de costo del dinero en la bolsa (liquidez inmediata), referencia para T+0
+        cau = cauciones_ars()
+        if cau:
+            def _cau_txt(d):
+                if d in cau:
+                    tna = cau[d]
+                    tea = (1 + tna / 100 / 365) ** 365 - 1
+                    return f"**{d} día{'s' if d > 1 else ''}:** {tna:.1f}% TNA (≈ {tea*100:.1f}% TEA)"
+                return None
+            partes_cau = [x for x in (_cau_txt(1), _cau_txt(7)) if x]
+            if not partes_cau:  # si no están 1 y 7, mostrar los dos plazos más cortos disponibles
+                for d in sorted(cau)[:2]:
+                    partes_cau.append(_cau_txt(d))
+            if partes_cau:
+                st.caption("💵 **Caución bursátil** (piso de liquidez inmediata en la bolsa) — " + " · ".join(partes_cau) +
+                           ". Es la tasa a la que se presta plata con garantía en el mercado: sirve de piso para comparar "
+                           "con el rendimiento diario de fondos T+0 y billeteras.")
+
         if top.empty:
             st.info("Ningún fondo cumple los filtros elegidos." if not modo_infl else
                     "Ningún fondo de esta categoría supera la inflación esperada con el rendimiento del período elegido.")
@@ -1725,7 +1868,9 @@ with tab5:
                       ("Dur. modificada", "Duración modificada", f_num(2)), ("Días p/ recuperar", "Días para recuperar", f_num(0)),
                       ("Días al vto.", "Días al vto.", f_num(0)), ("Próximo pago", "Próximo pago", f_fecha),
                       ("Vencimiento", "Vencimiento", f_fecha)]
-    sub_l, sub_s, sub_o, sub_m = st.tabs(["Letras (pesos)", "Bonos soberanos (USD)", "ONs (USD)", "Calculadora manual"])
+    sub_l, sub_cer, sub_s, sub_o, sub_m = st.tabs(
+        ["Letras (pesos)", "Bonos CER (inflación)", "Bonos soberanos (USD)", "ONs (USD)", "Calculadora manual"])
+    curva_usd = []   # puntos (duración modificada, TIR) para el scatter de la curva hard-dollar
     try:
         crono = cargar_cronogramas()
         px, paneles = precios_renta_fija()
@@ -1770,6 +1915,76 @@ with tab5:
             st.caption(f"{len(filas)} de {len(crono['letras'])} letras con precio. Si falta una letra reciente, hay que agregarla "
                        "a cronogramas.json (ticker, vencimiento y pago final por 100).")
 
+        with sub_cer:
+            cer_df, cer_fecha = bonos_cer()
+            if cer_df.empty:
+                st.warning("No se pudieron obtener los bonos CER ahora (ArgentinaDatos). Probá recargar en unos minutos.")
+            else:
+                # Curva de tasa fija (letras en pesos) para calcular la inflación de equilibrio (breakeven):
+                # para cada bono CER, qué inflación hace que rinda lo mismo que una Lecap del mismo plazo.
+                curva_fija = []
+                for l in crono["letras"]:
+                    p = px.get(l["ticker"])
+                    d = (date.fromisoformat(l["vencimiento"]) - liq).days
+                    if p and d > 0:
+                        tea = ((l["pago_final"] / p) ** (365 / d) - 1) * 100
+                        curva_fija.append((d, tea))
+                curva_fija.sort()
+
+                def tea_fija_en(dias):
+                    """TEA de tasa fija interpolada para ese plazo (o None si no hay curva)."""
+                    if not curva_fija:
+                        return None
+                    ds = [c[0] for c in curva_fija]; ts = [c[1] for c in curva_fija]
+                    if dias <= ds[0]:
+                        return ts[0]
+                    if dias >= ds[-1]:
+                        return ts[-1]
+                    return float(np.interp(dias, ds, ts))
+
+                cer_df = cer_df.copy()
+                cer_df["Días"] = [(date.fromisoformat(str(f)[:10]) - liq).days for f in cer_df["Vencimiento"]]
+                cer_df = cer_df[cer_df["Días"] > 0].sort_values("Días")
+                be = []
+                for _, b in cer_df.iterrows():
+                    tf = tea_fija_en(b["Días"])
+                    if tf is None:
+                        be.append(np.nan)
+                    else:
+                        # inflación de equilibrio: (1+TEA_fija) = (1+TIR_real)·(1+infl) → infl = (1+TEA_fija)/(1+TIR_real)-1
+                        be.append(((1 + tf / 100) / (1 + b["TIR real %"] / 100) - 1) * 100)
+                cer_df["Breakeven infl. %"] = be
+
+                infl_be = rem_val2 if modo_infl and rem_val2 else None
+                if infl_be is None:
+                    rv, _ = rem_inflacion()
+                    infl_be = rv
+                st.caption("Los bonos CER ajustan el capital por inflación (CER). La **TIR real** es lo que rendís *por encima* de la "
+                           "inflación. La **inflación de equilibrio** (breakeven) es la inflación a la que un CER y una letra a tasa fija "
+                           "del mismo plazo rinden igual: si esperás **más** inflación que ese número, conviene el CER; si esperás "
+                           "**menos**, conviene la tasa fija." +
+                           (f" Inflación esperada (REM): **{infl_be:.1f}%** anual." if infl_be else ""))
+
+                def _be_chip(bval):
+                    if pd.isna(bval):
+                        return "-"
+                    if infl_be is None:
+                        return E.num(bval, 1, suf="%")
+                    # si la inflación esperada supera el breakeven, el CER conviene (verde)
+                    tipo = "up" if infl_be > bval else "down"
+                    return E.chip(E.num(bval, 1, suf="%"), tipo)
+
+                filas_cer = [[E.activo(b["Instrumento"], f"Vence {str(b['Vencimiento'])[:10]}", b["Instrumento"][:3]),
+                              E.num(b["Precio ARS"], 0, "AR$ "),
+                              f'<span class="strong">{E.num(b["TIR real %"], 1, suf="%")}</span>',
+                              E.num(b["Días"], 0), _be_chip(b["Breakeven infl. %"])]
+                             for _, b in cer_df.iterrows()]
+                H(E.tabla([("Bono", "l"), ("Precio", "l"), ("TIR real (sobre CER)", "l"),
+                           ("Días al vto.", "l"), ("Inflación breakeven", "l")], filas_cer, compacta=True))
+                st.caption(f"Datos de ArgentinaDatos actualizados al {str(cer_fecha)[:10]}. La TIR real viene calculada por la fuente. "
+                           "El breakeven usa la curva de letras a tasa fija de esta misma página (interpolada por plazo). "
+                           "En el chip, verde = a la inflación que esperás, el CER conviene; rojo = conviene la tasa fija.")
+
         with sub_s:
             filas, flujos = [], {}
             for k, v in ({} if modo_corto else crono["soberanos"]).items():
@@ -1778,6 +1993,8 @@ with tab5:
                 if m:
                     filas.append({"Instrumento": k, "Sub": f"Ley {v['ley']}", "Precio USD": p, **m})
                     flujos[k] = v["flujos"]
+                    curva_usd.append({"Instrumento": k, "Duración": m["Duración modificada"],
+                                      "TIR": m["TIR (TEA) %"], "Tipo": "Soberano"})
             tabla_bonos(filas, flujos, "rf_sob", liq, "En el modo corto plazo no se muestran bonos: sus plazos son largos y su precio varía." if modo_corto else "No hay precios disponibles para los bonos soberanos.", columnas_bonos)
             if modo_infl:
                 st.caption("Estos bonos están en dólares y a tasa fija: no están indexados por CER.")
@@ -1792,11 +2009,24 @@ with tab5:
                 if m:
                     filas.append({"Instrumento": k, "Sub": v["nombre"], "Precio USD": p, **m})
                     flujos[k] = v["flujos"]
+                    curva_usd.append({"Instrumento": k, "Duración": m["Duración modificada"],
+                                      "TIR": m["TIR (TEA) %"], "Tipo": "ON"})
             tabla_bonos(filas, flujos, "rf_ons", liq, "En el modo corto plazo no se muestran ONs: sus plazos son largos y su precio varía." if modo_corto else "No hay precios disponibles para las ONs cargadas.", columnas_bonos)
             if modo_infl:
                 st.caption("Estas ONs están en dólares y a tasa fija: no están indexadas por CER.")
             st.caption("Las ONs con poca operación pueden tener precios poco representativos: mirá el spread y el volumen "
                        "en tu broker antes de usar la TIR. La TIR usa el precio de pantalla sin ajustar intereses corridos.")
+
+        # --- Curva de rendimientos (scatter): TIR vs duración modificada, hard-dollar ---
+        if len(curva_usd) >= 2:
+            st.markdown("#### Curva de rendimientos (bonos y ONs en dólares)")
+            cdf = pd.DataFrame(curva_usd)
+            cdf = cdf[cdf["Duración"].notna() & cdf["TIR"].notna() & (cdf["TIR"] < 100)]
+            if len(cdf) >= 2:
+                st.altair_chart(scatter_curva(cdf), width="stretch")
+                st.caption("Cada punto es un bono/ON en dólares: eje X la duración modificada (sensibilidad a la tasa), eje Y la TIR. "
+                           "Los que quedan **por encima** de la nube rinden más para su plazo (candidatos a revisar, puede haber más riesgo); "
+                           "los que quedan **por debajo** están más caros. Soberanos y ONs juntos porque comparten moneda (USD).")
 
     with sub_m:
 
