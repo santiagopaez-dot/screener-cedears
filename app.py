@@ -375,6 +375,42 @@ def precios_ar(tickers):
         return pd.DataFrame(), pd.DataFrame()
 
 
+def sesion_eeuu():
+    """Estado de la rueda de Nueva York según la hora actual: pre / regular / after / cerrado."""
+    now = datetime.now(ZoneInfo("America/New_York"))
+    if now.weekday() >= 5:   # sábado/domingo
+        return "cerrado", now
+    hm = now.hour * 60 + now.minute
+    if 4 * 60 <= hm < 9 * 60 + 30:
+        return "pre", now
+    if 9 * 60 + 30 <= hm < 16 * 60:
+        return "regular", now
+    if 16 * 60 <= hm < 20 * 60:
+        return "after", now
+    return "cerrado", now
+
+
+@st.cache_data(persist="disk", ttl=180, show_spinner="Consultando pre-market / after-hours...")
+def precios_extended(tickers):
+    """Último precio incluyendo pre-market y after-hours (Yahoo prepost). dict ticker -> (precio, hora ET)."""
+    try:
+        d = yf.download(list(tickers), period="2d", interval="5m", prepost=True,
+                        auto_adjust=True, progress=False)["Close"]
+        if isinstance(d, pd.Series):
+            d = d.to_frame(list(tickers)[0])
+        idx = d.index
+        idx = idx.tz_localize("UTC") if idx.tz is None else idx
+        d.index = idx.tz_convert("America/New_York")
+        out = {}
+        for t in d.columns:
+            s = d[t].dropna()
+            if len(s):
+                out[t] = (float(s.iloc[-1]), s.index[-1])
+        return out
+    except Exception:
+        return {}
+
+
 @st.cache_data(persist="disk", ttl=6 * 3600, show_spinner="Descargando dividendos...")
 def dividendos_12m(tickers):
     corte = pd.Timestamp.today() - pd.DateOffset(years=1)
@@ -1426,6 +1462,46 @@ with tab1:
     vol_min = c1.slider("Volatilidad mínima % (descarta las que casi no se mueven)", 0, 100, 30, step=5)
     filtro = c2.segmented_control("Mostrar", ["Todas", "Sobreventa", "Sobrecompra"], default="Todas", key="rsi_filtro") or "Todas"
 
+    # --- Pre-market / after-hours (solo CEDEARs: usan el precio de la acción en Nueva York) ---
+    estado_ny, ahora_ny = sesion_eeuu()
+    etiqueta_ses = {"pre": "🌅 Pre-market abierto", "regular": "🟢 Mercado abierto",
+                    "after": "🌙 After-hours", "cerrado": "⏸️ Mercado cerrado"}[estado_ny]
+    tabla["Pre %"] = np.nan
+    tabla["Pre precio"] = np.nan
+    tabla["RSI prov"] = np.nan
+    ver_pre = st.toggle(f"Ver pre-market / after-hours de EE.UU.  ·  {etiqueta_ses} ({ahora_ny:%H:%M} NY)",
+                        value=False, key="ver_pre",
+                        help="Muestra cómo se mueve la acción en Nueva York fuera del horario regular (pre-market y after-hours) "
+                             "y un RSI diario provisorio como si la rueda cerrara a ese precio. Solo aplica a CEDEARs.")
+    if ver_pre:
+        if estado_ny == "cerrado":
+            st.info("Ahora mismo no hay operaciones en Nueva York (ni pre-market ni after-hours). "
+                    "El pre-market suele arrancar a las 5:00 hora de Argentina.")
+        else:
+            cedear_liq = tuple(sorted(tabla.index[(~tabla["Es AR"]) & tabla["Liquida"]]))
+            ext = precios_extended(cedear_liq)
+            for tk, (p, ts) in ext.items():
+                if tk not in close.columns:
+                    continue
+                prev = close[tk].dropna()
+                if not len(prev):
+                    continue
+                tabla.loc[tk, "Pre precio"] = p
+                tabla.loc[tk, "Pre %"] = (p / prev.iloc[-1] - 1) * 100
+                s = prev.copy()
+                if ts.date() == s.index[-1].date():
+                    s.iloc[-1] = p            # reemplaza el cierre de hoy por el precio en curso
+                else:
+                    s.loc[pd.Timestamp(ts.date())] = p   # agrega la rueda en curso (provisoria)
+                try:
+                    tabla.loc[tk, "RSI prov"] = float(rsi(s).iloc[-1])
+                except Exception:
+                    pass
+            n_pre = int(tabla["Pre %"].notna().sum())
+            st.caption(f"{etiqueta_ses}. Mostrando el precio de {n_pre} CEDEARs fuera del horario regular y, al lado del RSI diario, "
+                       "un **RSI provisorio** (RSI) como si la rueda cerrara a ese precio. El pre-market tiene poco volumen: "
+                       "los movimientos pueden revertirse cuando abre el mercado.")
+
     # --- Dólar CCL implícito y brecha ---
     ccl_tab = tabla[tabla["Ratio"].notna() & tabla["CCL implícito"].notna() & tabla["Liquida"]].copy()
     if CCL_REF and len(ccl_tab):
@@ -1471,7 +1547,21 @@ with tab1:
         else:
             principal = f'<span class="strong">{E.num(r["Precio USD"], 2, "US$ ")}</span>'
             secund = f'<br><span class="muted" style="font-size:12px">AR$ {E.num(r["Precio ARS"], 0)}</span>' if not pd.isna(r["Precio ARS"]) else ""
-        return principal + secund
+        extra = ""
+        if ver_pre and not r["Es AR"] and not pd.isna(r.get("Pre %", np.nan)):
+            d = r["Pre %"]
+            cls = "up" if d > 0.05 else ("down" if d < -0.05 else "flat")
+            fl = "↑" if d > 0.05 else ("↓" if d < -0.05 else "~")
+            etq = {"pre": "PRE", "after": "AFT", "regular": "LIVE", "cerrado": "EXT"}[estado_ny]
+            extra = (f'<br><span class="chip ch-{cls}" style="font-size:11px;padding:1px 6px">{etq} {fl} '
+                     f'{E.num(abs(d), 2, suf="%")}</span> <span class="muted" style="font-size:11px">US$ {E.num(r["Pre precio"], 2)}</span>')
+        return principal + secund + extra
+
+    def _rsi_diario_cel(r):
+        base = E.rsi_pill(r["RSI diario"], lo, hi)
+        if ver_pre and not pd.isna(r.get("RSI prov", np.nan)):
+            base += f'<div class="muted" style="font-size:11px;margin-top:3px">RSI prov. {r["RSI prov"]:.0f}</div>'
+        return base
 
     def _vol_byma(r):
         v = r["Vol. BYMA"]
@@ -1489,7 +1579,7 @@ with tab1:
         with st.expander(f"{titulo} · {len(sub)} activo" + ("s" if len(sub)!=1 else ""), expanded=abierto):
             filas = [[E.activo(r["Nombre"], tk, tk[:2], var_pct=r["Var. diaria %"]),
                       _precio_cel(r), _vol_byma(r),
-                      E.num(r["Volatilidad %"], 2, suf="%"), E.rsi_pill(r["RSI diario"], lo, hi), E.rsi_pill(r["RSI 45 min"], lo, hi)]
+                      E.num(r["Volatilidad %"], 2, suf="%"), _rsi_diario_cel(r), E.rsi_pill(r["RSI 45 min"], lo, hi)]
                      for tk, r in sub.iterrows()]
             H(E.variacion_chip(sub["Var. diaria %"].mean()) + E.tabla(COLS_TRAD, filas, clase="t-trading"))
 
