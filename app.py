@@ -411,6 +411,18 @@ def precios_extended(tickers):
         return {}
 
 
+@st.cache_data(persist="disk", ttl=3600, show_spinner=False)
+def retornos_sp500():
+    """Retornos diarios del S&P 500 (índice de mercado para la beta de CAPM)."""
+    try:
+        d = yf.download("^GSPC", period="1y", auto_adjust=True, progress=False)["Close"]
+        if isinstance(d, pd.DataFrame):
+            d = d.iloc[:, 0]
+        return d.pct_change().dropna()
+    except Exception:
+        return pd.Series(dtype=float)
+
+
 @st.cache_data(persist="disk", ttl=6 * 3600, show_spinner="Descargando dividendos...")
 def dividendos_12m(tickers):
     corte = pd.Timestamp.today() - pd.DateOffset(years=1)
@@ -1361,8 +1373,8 @@ def controles_busqueda_fav(tabla, pref, gestionar=True):
     return busqueda, set(fav_sel)
 
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "CEDEARs · Trading", "CEDEARs · Dividendos", "Fondos (FCI)", "Simulador de tasas", "Renta fija", "Mi cartera",
+tab1, tab2, tab_rv, tab3, tab4, tab5, tab6 = st.tabs([
+    "Análisis técnico", "Análisis fundamental", "Cartera acciones", "Fondos (FCI)", "Simulador de tasas", "Renta fija", "Mi cartera",
 ])
 
 close, vol = precios(tuple(TICKERS))
@@ -1446,9 +1458,17 @@ tabla["Ratio"] = [np.nan if es_ar else RATIOS_CEDEAR.get(t, np.nan)
 tabla["CCL implícito"] = tabla["Precio ARS"] * tabla["Ratio"] / tabla["Precio USD"]
 tabla["Desvío CCL %"] = (tabla["CCL implícito"] / CCL_REF - 1) * 100 if CCL_REF else np.nan
 
+# Distancia del precio a sus medias móviles de 30, 50 y 200 ruedas (%). Positivo = precio por
+# encima de la media (tendencia alcista); negativo = por debajo. Sirve para ver tendencia.
+for _n in (30, 50, 200):
+    _partes = [(close.iloc[-1] / close.rolling(_n).mean().iloc[-1] - 1) * 100]
+    if not close_ar.empty:
+        _partes.append((close_ar.iloc[-1] / close_ar.rolling(_n).mean().iloc[-1] - 1) * 100)
+    tabla[f"MA{_n} %"] = pd.concat(_partes).reindex(tabla.index)
+
 # --- 1. CEDEARs: trading ------------------------------------------------------
 with tab1:
-    H('<div class="eyebrow m">CEDEARs · Trading</div><div class="h2">RSI diario y de 45 minutos</div>')
+    H('<div class="eyebrow m">Análisis técnico</div><div class="h2">RSI, medias móviles y pre-market</div>')
     txt = f"Datos diarios al {close.index[-1].date()}"
     txt += (f" · CEDEARs intradiario hasta {ult_intra:%d/%m %H:%M} (hora de Nueva York)" if ult_intra is not None
             else " · RSI de 45 min de CEDEARs no disponible ahora")
@@ -1573,13 +1593,30 @@ with tab1:
             return E.num(v / 1e3, 0, suf=" K")
         return E.num(v, 0)
 
-    COLS_TRAD = [("Activo", "l"), ("Precio", "l"), ("Vol. BYMA", "l"), ("Volatilidad", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")]
+    def _medias_cel(r):
+        # Tres líneas apiladas: media (30/50/200) y % del precio respecto a ella.
+        # Verde si el precio está por encima de la media; rojo si está por debajo.
+        lineas = []
+        for n in (30, 50, 200):
+            d = r.get(f"MA{n} %", np.nan)
+            if pd.isna(d):
+                lineas.append(f'<div style="font-size:11.5px;line-height:1.5"><b style="color:#8A7A6C">{n}</b> '
+                              f'<span class="muted">—</span></div>')
+                continue
+            cls = "up" if d >= 0 else "down"
+            signo = "+" if d > 0 else ""
+            lineas.append(f'<div style="font-size:11.5px;line-height:1.5"><b style="color:#8A7A6C">{n}</b> '
+                          f'<span class="chip ch-{cls}" style="font-size:11px;padding:1px 6px">{signo}{E.num(d, 1, suf="%")}</span></div>')
+        return "".join(lineas)
+
+    COLS_TRAD = [("Activo", "l"), ("Precio", "l"), ("Vol. BYMA", "l"), ("Volatilidad", "l"),
+                 ("Medias móviles", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")]
 
     def _grupo_trad(titulo, sub, abierto):
         with st.expander(f"{titulo} · {len(sub)} activo" + ("s" if len(sub)!=1 else ""), expanded=abierto):
             filas = [[E.activo(r["Nombre"], tk, tk[:2], var_pct=r["Var. diaria %"]),
                       _precio_cel(r), _vol_byma(r),
-                      E.num(r["Volatilidad %"], 2, suf="%"), _rsi_diario_cel(r), E.rsi_pill(r["RSI 45 min"], lo, hi)]
+                      E.num(r["Volatilidad %"], 2, suf="%"), _medias_cel(r), _rsi_diario_cel(r), E.rsi_pill(r["RSI 45 min"], lo, hi)]
                      for tk, r in sub.iterrows()]
             H(E.variacion_chip(sub["Var. diaria %"].mean()) + E.tabla(COLS_TRAD, filas, clase="t-trading"))
 
@@ -1597,14 +1634,16 @@ with tab1:
         sub = cuerpo[cuerpo["Sector"] == sector].sort_values("Volatilidad %", ascending=False)
         _grupo_trad(sector, sub, abierto=bool(busqueda.strip()))
     H(E.leyenda_rsi(lo, hi))
-    st.caption("RSI 45 min: velas de 45 minutos armadas desde datos de 15 min (Yahoo, pueden tener demora); fuera del horario de mercado muestra la última rueda. "
+    st.caption("Medias móviles: % del precio respecto a su promedio de 30, 50 y 200 ruedas. Verde = precio por encima de la media "
+               "(tendencia alcista); rojo = por debajo (bajista). Cuanto más largo el plazo (200), más de fondo es la tendencia. "
+               "RSI 45 min: velas de 45 minutos armadas desde datos de 15 min (Yahoo, pueden tener demora); fuera del horario de mercado muestra la última rueda. "
                "Volatilidad: desvío de retornos diarios de 60 ruedas, anualizado; descartar las de baja volatilidad evita activos que casi no se mueven. "
                "Las acciones argentinas (🇦🇷) tienen su propio piso de volumen mínimo, porque el mercado local mueve muchos menos dólares que Nueva York. "
                "La barra de cada RSI muestra su valor de 0 a 100. Informativo, no es una recomendación de inversión.")
 
 # --- 2. CEDEARs: dividendos + cara o barata -----------------------------------
 with tab2:
-    H('<div class="eyebrow m">CEDEARs · Dividendos</div><div class="h2">Dividendos y valuación</div>')
+    H('<div class="eyebrow m">Análisis fundamental</div><div class="h2">Dividendos y valuación</div>')
     busqueda_d, favs_d = controles_busqueda_fav(tabla, "div", gestionar=False)
     st.caption("Tus favoritas (★) se eligen en la pestaña «CEDEARs · Trading» y también aparecen primero acá.")
     # Para no pedirle datos fundamentales a Yahoo de los 250+ tickers (lento), solo traemos los de
@@ -1704,6 +1743,130 @@ with tab2:
         "**¿Cara o barata?** Compara el P/E contra la mediana de su sector en esta lista (barata <0,8× · cara >1,2×). "
         "Es una comparación **relativa**, no un valor intrínseco: una acción puede ser barata porque se esperan ganancias menores."
     )
+
+# --- 2b. Renta variable: cartera de acciones (riesgo + diversificación + CAPM) ----------------
+with tab_rv:
+    H('<div class="eyebrow m">Renta variable</div><div class="h2">Armá tu cartera de acciones</div>')
+    st.caption("Elegí CEDEARs y la app calcula el riesgo de la cartera, te sugiere cuáles sumar para bajarlo "
+               "y estima el rendimiento esperado con CAPM. Todo **en dólares** (así el CCL no ensucia el riesgo). "
+               "Informativo, no es recomendación de inversión.")
+
+    # Universo: CEDEARs líquidos con precio diario en USD (las acciones argentinas quedan afuera: distinta moneda)
+    universo = [t for t in tabla.index[(~tabla["Es AR"]) & tabla["Liquida"]] if t in close.columns]
+    universo = sorted(universo, key=lambda t: tabla.loc[t, "Nombre"])
+    nombres_u = {t: tabla.loc[t, "Nombre"] for t in universo}
+
+    favs_rv = sorted(st.session_state.get("fav_acciones", set()) & set(universo))
+    sel = st.multiselect("Elegí las acciones de tu cartera (2 o más)", options=universo,
+                         default=favs_rv[:5] if favs_rv else universo[:4],
+                         format_func=lambda t: f"{nombres_u[t]} ({t})", key="rv_sel")
+
+    cA, cB = st.columns(2)
+    rf = cA.number_input("Tasa libre de riesgo anual (%)", min_value=0.0, max_value=20.0, value=4.0, step=0.5,
+                         help="Rendimiento de un bono del Tesoro de EE.UU. Base del CAPM.") / 100
+    prima = cB.number_input("Prima de mercado esperada anual (%)", min_value=0.0, max_value=20.0, value=5.0, step=0.5,
+                            help="Cuánto se espera que las acciones rindan por encima de la tasa libre, en promedio y a largo plazo. "
+                                 "Es un supuesto tuyo.") / 100
+
+    if len(sel) < 2:
+        st.info("Elegí al menos 2 acciones para calcular el riesgo y la diversificación de la cartera.")
+    else:
+        # Pesos: por defecto equitativos, editables
+        with st.expander("Ajustar pesos (por defecto, equitativos)"):
+            pesos_df = st.data_editor(
+                pd.DataFrame({"Acción": [nombres_u[t] for t in sel], "Ticker": sel,
+                              "Peso %": [round(100 / len(sel), 2)] * len(sel)}),
+                hide_index=True, width="stretch", key="rv_pesos",
+                column_config={"Acción": st.column_config.TextColumn(disabled=True),
+                               "Ticker": st.column_config.TextColumn(disabled=True),
+                               "Peso %": st.column_config.NumberColumn(min_value=0.0, step=1.0)})
+        pesos = pesos_df.set_index("Ticker")["Peso %"].reindex(sel).fillna(0.0).values.astype(float)
+        if pesos.sum() <= 0:
+            pesos = np.ones(len(sel))
+        w = pesos / pesos.sum()
+
+        # Retornos diarios en USD y covarianza anualizada (pairwise, tolera huecos)
+        ret_u = close[universo].pct_change()
+        COV = ret_u.cov() * 252
+        sub_cov = COV.loc[sel, sel].values
+        var_port = float(w @ sub_cov @ w)
+        vol_port = float(np.sqrt(max(var_port, 0)))
+        vol_ind = np.sqrt(np.diag(sub_cov))
+        # Contribución de cada acción al riesgo total
+        marg = sub_cov @ w
+        contrib = (w * marg) / var_port if var_port > 0 else np.zeros(len(sel))
+
+        # Beta vs S&P 500 y retorno esperado por CAPM
+        mkt = retornos_sp500()
+        betas = {}
+        if len(mkt):
+            var_m = float(mkt.var())
+            for t in sel:
+                r = ret_u[t].dropna()
+                al = pd.concat([r.rename("a"), mkt.rename("m")], axis=1, join="inner").dropna()
+                betas[t] = float(al["a"].cov(al["m"]) / var_m) if len(al) > 20 and var_m > 0 else np.nan
+        else:
+            betas = {t: np.nan for t in sel}
+        er = {t: (rf + betas[t] * prima) * 100 if not pd.isna(betas[t]) else np.nan for t in sel}
+        beta_port = float(np.nansum([w[i] * betas[sel[i]] for i in range(len(sel)) if not pd.isna(betas[sel[i]])]))
+        er_port = sum(w[i] * er[sel[i]] for i in range(len(sel)) if not pd.isna(er[sel[i]]))
+
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Volatilidad de la cartera", f"{vol_port*100:.1f}%", help="Cuánto oscila la cartera por año (desvío anualizado, en USD).")
+        k2.metric("Retorno esperado (CAPM)", f"{er_port:.1f}%", help="Libre de riesgo + beta × prima de mercado, ponderado.")
+        k3.metric("Beta de la cartera", f"{beta_port:.2f}", help="Sensibilidad al S&P 500. 1 = se mueve como el mercado.")
+
+        def _contrib_bar(c):
+            p = max(0, min(100, c * 100))
+            return (f'<div style="display:flex;align-items:center;gap:7px"><div class="bar" style="width:60px;margin:0;background:#E7E0D5">'
+                    f'<i style="width:{p:.0f}%;background:#6A4FA0"></i></div><span>{c*100:.0f}%</span></div>')
+        filas_rv = []
+        for i, t in enumerate(sel):
+            filas_rv.append([E.activo(nombres_u[t], t, t[:2]), E.num(w[i] * 100, 1, suf="%"),
+                             E.num(vol_ind[i] * 100, 1, suf="%"), _contrib_bar(contrib[i]),
+                             E.num(betas[t], 2) if not pd.isna(betas[t]) else "-",
+                             f'<span class="strong">{E.num(er[t], 1, suf="%")}</span>' if not pd.isna(er[t]) else "-"])
+        H(E.tabla([("Acción", "l"), ("Peso", "l"), ("Volatilidad", "l"), ("Aporte al riesgo", "l"),
+                   ("Beta", "l"), ("Retorno esp.", "l")], filas_rv, compacta=True))
+        st.caption("**Aporte al riesgo**: cuánto del riesgo total de la cartera viene de cada acción (suma 100%). Puede diferir del peso: "
+                   "una acción muy correlacionada con el resto aporta más riesgo del que parece.")
+
+        # Recomendador: qué CEDEARs bajarían el riesgo si se sumaran con un 10%
+        st.markdown("#### Para bajar el riesgo")
+        cand = [t for t in universo if t not in sel]
+        res = []
+        for c in cand:
+            idx = sel + [c]
+            try:
+                cv = COV.loc[idx, idx].values
+            except Exception:
+                continue
+            if np.isnan(cv).any():
+                continue
+            w_new = np.append(w * 0.9, 0.10)
+            v_new = float(np.sqrt(max(w_new @ cv @ w_new, 0)))
+            if v_new < vol_port:
+                res.append((c, v_new))
+        res.sort(key=lambda x: x[1])
+        if not res:
+            st.caption("No se encontraron CEDEARs que, sumados, bajen la volatilidad de esta cartera (ya está bastante diversificada "
+                       "o faltan datos).")
+        else:
+            filas_rec = []
+            for c, v_new in res[:8]:
+                baja = (vol_port - v_new) * 100
+                filas_rec.append([E.activo(nombres_u[c], c, c[:2]),
+                                  E.num(tabla.loc[c, "Volatilidad %"], 1, suf="%"),
+                                  f'{vol_port*100:.1f}% → <span class="strong">{v_new*100:.1f}%</span>',
+                                  E.chip(f"−{baja:.1f} p.p.", "up")])
+            H(E.tabla([("Sumar", "l"), ("Su volatilidad", "l"), ("Riesgo cartera", "l"), ("Baja", "l")],
+                      filas_rec, compacta=True))
+            st.caption("Cada fila muestra cómo quedaría la volatilidad de tu cartera si sumaras ese CEDEAR con un 10% "
+                       "(bajando proporcionalmente el resto). Bajan el riesgo los de baja volatilidad y poca correlación con lo que ya tenés.")
+
+        st.caption("Datos: retornos diarios del último año en USD. La covarianza y la beta miran para atrás (no garantizan el futuro); "
+                   "el retorno esperado es de largo plazo por CAPM, no un pronóstico. Prima de mercado y tasa libre son supuestos editables arriba.")
+
 
 # --- 3. FCI -----------------------------------------------------------------
 with tab3:
@@ -1958,8 +2121,8 @@ with tab5:
                       ("Dur. modificada", "Duración modificada", f_num(2)), ("Días p/ recuperar", "Días para recuperar", f_num(0)),
                       ("Días al vto.", "Días al vto.", f_num(0)), ("Próximo pago", "Próximo pago", f_fecha),
                       ("Vencimiento", "Vencimiento", f_fecha)]
-    sub_l, sub_cer, sub_s, sub_o, sub_m = st.tabs(
-        ["Letras (pesos)", "Bonos CER (inflación)", "Bonos soberanos (USD)", "ONs (USD)", "Calculadora manual"])
+    sub_arm, sub_l, sub_cer, sub_s, sub_o, sub_m = st.tabs(
+        ["Armar cartera", "Letras (pesos)", "Bonos CER (inflación)", "Bonos soberanos (USD)", "ONs (USD)", "Calculadora manual"])
     curva_usd = []   # puntos (duración modificada, TIR) para el scatter de la curva hard-dollar
     try:
         crono = cargar_cronogramas()
@@ -1974,6 +2137,109 @@ with tab5:
             st.warning("No se pudo conectar con la fuente de precios (data912) en este momento.")
         st.caption(f"Cronogramas de pago actualizados al **{crono['actualizado']}** (archivo cronogramas.json del repositorio). "
                    f"Liquidación estimada: {liq:%d/%m/%Y} (T+1, sin contar feriados).")
+
+        with sub_arm:
+            st.caption("Elegí moneda, horizonte y perfil, y la app arma una cartera con los instrumentos que ya cotizan acá, "
+                       "muestra el rendimiento esperado, el calendario de pagos y un stress test. Informativo, no es recomendación.")
+            ca1, ca2, ca3 = st.columns(3)
+            moneda_obj = ca1.selectbox("Moneda de tu objetivo", ["Dólares", "Pesos (tasa fija)", "Pesos + inflación (CER)"])
+            horizonte = ca2.slider("Horizonte (años)", 0.5, 10.0, 2.0, step=0.5,
+                                   help="En cuánto tiempo pensás usar la plata. La cartera se arma con duración cercana a este plazo.")
+            perfil = ca3.selectbox("Perfil", ["Bajo", "Medio", "Alto"],
+                                   help="Bajo: menor duración (menos sensible a tasas) y lo más seguro. Alto: permite más duración y más tipos de instrumento.")
+            monto = st.number_input("Monto a invertir", min_value=0.0, value=10000.0, step=1000.0,
+                                    help="En la moneda del objetivo (dólares o pesos). Solo escala los resultados.")
+            dur_cap = {"Bajo": 2.0, "Medio": 4.0, "Alto": 8.0}[perfil]
+
+            # Reunir candidatos con sus flujos y métricas, según la moneda del objetivo
+            cands = []  # (nombre, sub, precio, flujos, tir, dur, durmod)
+            if moneda_obj == "Dólares":
+                for k, v in crono["soberanos"].items():
+                    p = px.get(k + "D"); m = metricas_flujos(p, v["flujos"], liq, reinv, n_cap, nom_cap.lower()) if p else None
+                    if m:
+                        cands.append((k, "Soberano USD", p, v["flujos"], m["TIR (TEA) %"], m["Duración (años)"], m["Duración modificada"]))
+                if perfil != "Bajo":   # las ONs entran en perfil medio/alto (más riesgo de crédito)
+                    for k, v in crono["ons"].items():
+                        p = px.get(v["precio_ticker"]); m = metricas_flujos(p, v["flujos"], liq, reinv, n_cap, nom_cap.lower()) if p else None
+                        if m:
+                            cands.append((k, "ON · " + v["nombre"], p, v["flujos"], m["TIR (TEA) %"], m["Duración (años)"], m["Duración modificada"]))
+            elif moneda_obj == "Pesos (tasa fija)":
+                for l in crono["letras"]:
+                    p = px.get(l["ticker"]); dias = (date.fromisoformat(l["vencimiento"]) - liq).days
+                    if p and dias > 0:
+                        rend = l["pago_final"] / p - 1
+                        tea = ((1 + rend) ** (365 / dias) - 1) * 100
+                        dur = dias / 365
+                        cands.append((l["ticker"], "Letra pesos", p, [(l["vencimiento"], l["pago_final"])], tea, dur, dur / (1 + tea / 100)))
+            else:  # Pesos + CER
+                cer_df, _ = bonos_cer()
+                for _, b in cer_df.iterrows():
+                    dias = (date.fromisoformat(str(b["Vencimiento"])[:10]) - liq).days
+                    if dias > 0:
+                        dur = dias / 365   # aproximación: los CER suelen amortizar al final o cerca
+                        cands.append((b["Instrumento"], "Bono CER", b["Precio ARS"], None, b["TIR real %"], dur, dur / (1 + b["TIR real %"] / 100)))
+
+            cands = [c for c in cands if c[5] <= dur_cap + 0.5]   # dentro del tope de duración del perfil
+            if not cands:
+                st.warning("No hay instrumentos de esa moneda y perfil con precio ahora mismo. Probá otro perfil o moneda.")
+            else:
+                # Elegir los 3-4 con duración más cercana al horizonte (y mejor TIR para desempatar)
+                cands.sort(key=lambda c: (abs(c[5] - horizonte), -c[4]))
+                elegidos = cands[:4]
+                w_rf = np.ones(len(elegidos)) / len(elegidos)   # equitativo
+                tir_port = float(np.dot(w_rf, [c[4] for c in elegidos]))
+                dur_port = float(np.dot(w_rf, [c[5] for c in elegidos]))
+                durmod_port = float(np.dot(w_rf, [c[6] for c in elegidos]))
+
+                sim = "US$ " if moneda_obj == "Dólares" else "AR$ "
+                k1, k2, k3 = st.columns(3)
+                k1.metric("Rendimiento esperado (TIR)", f"{tir_port:.1f}%",
+                          help="TIR promedio ponderada. Es lo que rendiría si mantenés al vencimiento y pagan todo.")
+                k2.metric("Duración de la cartera", f"{dur_port:.1f} años")
+                k3.metric("Inmunización vs tu horizonte",
+                          "✔ alineada" if abs(dur_port - horizonte) <= 0.75 else f"{dur_port - horizonte:+.1f} años",
+                          help="Si la duración ≈ tu horizonte, la cartera queda 'inmunizada': una suba de tasas te baja el precio pero te sube "
+                               "la reinversión, y se compensan cerca de tu fecha objetivo.")
+
+                filas_arm = [[E.activo(c[0], c[1], c[0][:3]), E.num(monto * w / 100, 0, sim),
+                              f'<span class="strong">{E.num(c[4], 1, suf="%")}</span>', E.num(c[5], 1, suf=" a")]
+                             for c, w in zip(elegidos, w_rf * 100)]
+                H(E.tabla([("Instrumento", "l"), ("Monto", "l"), ("TIR", "l"), ("Duración", "l")], filas_arm, compacta=True))
+
+                # Calendario de pagos agregado (solo para instrumentos con flujos: USD y pesos tasa fija)
+                pagos_anio = {}
+                for c, w in zip(elegidos, w_rf):
+                    if not c[3]:
+                        continue
+                    nominal = (monto * w) / (c[2] / 100)   # VN que comprás con esa parte del monto
+                    for f, pago in c[3]:
+                        y = date.fromisoformat(str(f)[:10]).year
+                        pagos_anio[y] = pagos_anio.get(y, 0) + nominal / 100 * pago
+                if pagos_anio:
+                    dfp = pd.DataFrame({"Año": list(pagos_anio.keys()), "Cobrás": list(pagos_anio.values())}).sort_values("Año")
+                    ch = alt.Chart(dfp).mark_bar(color="#6A4FA0", cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
+                        x=alt.X("Año:O", title="Año"),
+                        y=alt.Y("Cobrás:Q", title=f"Cobrás ({sim.strip()})"),
+                        tooltip=[alt.Tooltip("Año:O"), alt.Tooltip("Cobrás:Q", format=",.0f")])
+                    st.markdown("**Calendario de pagos de la cartera**")
+                    st.altair_chart(ch.properties(height=220).configure_view(strokeWidth=0), width="stretch")
+
+                # Stress test con la duración modificada de la cartera
+                st.markdown("**Stress test** (impacto aproximado en el precio, vía duración modificada)")
+                escenarios = [("Tasas +2 pp", -durmod_port * 2.0)]
+                if moneda_obj == "Dólares":
+                    escenarios.append(("Riesgo país +500 pb", -durmod_port * 5.0))
+                else:
+                    escenarios.append(("Devaluación 30% (si medís en US$)", (1 / 1.30 - 1) * 100))
+                filas_ss = [[nom, E.chip(f"{imp:+.1f}%", "down" if imp < 0 else "up"),
+                             E.num(monto * (1 + imp / 100), 0, sim)] for nom, imp in escenarios]
+                H(E.tabla([("Escenario", "l"), ("Impacto", "l"), ("Valor resultante", "l")], filas_ss, compacta=True))
+                peor = min(imp for _, imp in escenarios)
+                st.caption(f"**Peor caso de los escenarios:** {peor:+.1f}% → {sim}{monto * (1 + peor/100):,.0f}. "
+                           "El stress test aproxima el cambio de precio con la duración (válido para movimientos chicos). "
+                           "No incluye default: es riesgo de precio por tasa/devaluación, no de que el emisor no pague. "
+                           + ("Los bonos CER no tienen cronograma de flujos cargado, así que no se muestra el calendario de pagos."
+                              if moneda_obj.startswith("Pesos +") else ""))
 
         with sub_l:
             if modo_corto:
