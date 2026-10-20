@@ -468,20 +468,30 @@ def rsi_45m(tickers, sufijo="", tz="America/New_York", inicio_min=570):
     return pd.Series(out), ultima
 
 
-@st.cache_data(persist="disk", ttl=6 * 3600, show_spinner="Descargando datos fundamentales...")
+@st.cache_data(persist="disk", ttl=6 * 3600, show_spinner=False)
+def _fundamental_uno(t):
+    """Datos fundamentales de un ticker. Si Yahoo no devuelve nada (rate limit), LANZA excepción
+    para que st.cache_data NO cachee el fallo y se reintente en la próxima recarga."""
+    i = yf.Ticker(t).info
+    pe, sector = i.get("trailingPE"), i.get("sector")
+    if pe is None and sector is None and i.get("forwardPE") is None:
+        raise ValueError("sin datos (probable rate limit de Yahoo)")
+    roe, deuda, ebitda = i.get("returnOnEquity"), i.get("totalDebt"), i.get("ebitda")
+    return {"Sector": sector, "P/E": pe, "P/E futuro": i.get("forwardPE"), "P/B": i.get("priceToBook"),
+            "ROE %": roe * 100 if roe is not None else None,
+            "Deuda/EBITDA": deuda / ebitda if deuda and ebitda and ebitda > 0 else None}
+
+
 def fundamentales(tickers):
+    """Junta los fundamentales por ticker (cada uno cacheado aparte; los fallidos se reintentan solos)."""
     filas = []
     for t in tickers:
         try:
-            i = yf.Ticker(t).info
-            roe, deuda, ebitda = i.get("returnOnEquity"), i.get("totalDebt"), i.get("ebitda")
-            filas.append({"Ticker": t, "Sector": i.get("sector"),
-                          "P/E": i.get("trailingPE"), "P/E futuro": i.get("forwardPE"),
-                          "P/B": i.get("priceToBook"),
-                          "ROE %": roe * 100 if roe is not None else None,
-                          "Deuda/EBITDA": deuda / ebitda if deuda and ebitda and ebitda > 0 else None})
+            d = dict(_fundamental_uno(t))
+            d["Ticker"] = t
         except Exception:
-            filas.append({"Ticker": t})
+            d = {"Ticker": t}
+        filas.append(d)
     df = pd.DataFrame(filas).set_index("Ticker")
     return df.reindex(columns=["Sector", "P/E", "P/E futuro", "P/B", "ROE %", "Deuda/EBITDA"])
 
@@ -1277,6 +1287,27 @@ def tabla_bonos(filas, flujos_por_id, key, liq, aviso_vacio, columnas):
         H(E.cronograma_card(sel, df.loc[df["Instrumento"] == sel, "Sub"].iloc[0], cron))
         st.caption("Para bonos que amortizan, cada pago mezcla cupón y devolución de capital. Días: desde la liquidación estimada.")
 
+    # Bonos similares: mismo tipo (= misma clase de riesgo) y duración parecida, para evaluar un cambio
+    if "Duración (años)" in df.columns and "TIR (TEA) %" in df.columns:
+        fila_sel = df[df["Instrumento"] == sel].iloc[0]
+        sdur, stir = fila_sel["Duración (años)"], fila_sel["TIR (TEA) %"]
+        otros = df[(df["Instrumento"] != sel) & df["Duración (años)"].notna()].copy()
+        if len(otros) and not pd.isna(sdur):
+            otros["dd"] = (otros["Duración (años)"] - sdur).abs()
+            sim = otros.sort_values("dd").head(4)
+            st.markdown(f"**Bonos parecidos a {sel}** (misma clase de riesgo, duración similar)")
+            filas_sim = []
+            for _, b in sim.iterrows():
+                dtir = b["TIR (TEA) %"] - stir
+                chip = E.chip(E.num(dtir, 2, suf=" p.p.", signo=True), "up" if dtir > 0.05 else ("down" if dtir < -0.05 else "flat"))
+                filas_sim.append([E.activo(b["Instrumento"], b.get("Sub", ""), str(b["Instrumento"])[:2]),
+                                  E.num(b["Duración (años)"], 2, suf=" a"),
+                                  f'<span class="strong">{E.num(b["TIR (TEA) %"], 2, suf="%")}</span>', chip])
+            H(E.tabla([("Instrumento", "l"), ("Duración", "l"), ("TIR", "l"), (f"vs. {sel}", "l")], filas_sim, compacta=True))
+            st.caption(f"Comparado con {sel} (duración {E.num(sdur, 2)} años, TIR {E.num(stir, 2)}%). "
+                       "Si otro bono de **duración parecida** rinde más (verde), puede convenir cambiarte: tomás más tasa "
+                       "sin cambiar casi la sensibilidad a las tasas ni el tipo de riesgo. Igual mirá el volumen y el spread antes.")
+
 
 # ----------------------------------------------------------------------------
 # Pestañas
@@ -1481,6 +1512,11 @@ with tab1:
     c1, c2 = st.columns([2, 3], vertical_alignment="bottom")
     vol_min = c1.slider("Volatilidad mínima % (descarta las que casi no se mueven)", 0, 100, 30, step=5)
     filtro = c2.segmented_control("Mostrar", ["Todas", "Sobreventa", "Sobrecompra"], default="Todas", key="rsi_filtro") or "Todas"
+    OPC_MA = ["Todas", "Por encima de MA30", "Por debajo de MA30", "Por encima de MA50",
+              "Por debajo de MA50", "Por encima de MA200", "Por debajo de MA200"]
+    filtro_ma = st.selectbox("Filtrar por media móvil", OPC_MA, index=0, key="ma_filtro",
+                             help="Mostrá solo las que cotizan por encima (tendencia alcista) o por debajo (bajista) "
+                                  "de su promedio de 30, 50 o 200 ruedas.")
 
     # --- Pre-market / after-hours (solo CEDEARs: usan el precio de la acción en Nueva York) ---
     estado_ny, ahora_ny = sesion_eeuu()
@@ -1549,6 +1585,15 @@ with tab1:
             H(E.tabla([("Activo", "l"), ("Precio USD", "l"), ("Precio CEDEAR", "l"), ("Ratio", "l"),
                        ("CCL implícito", "l"), ("Desvío vs CCL", "l")], filas_ccl, compacta=True))
 
+    def _aplicar_filtro_ma(df):
+        if filtro_ma == "Todas":
+            return df
+        n = 30 if "MA30" in filtro_ma else (50 if "MA50" in filtro_ma else 200)
+        col = f"MA{n} %"
+        if "encima" in filtro_ma:
+            return df[df[col] > 0]
+        return df[df[col] < 0]
+
     if busqueda.strip():
         # Si buscás algo puntual, mostramos todo lo que coincida (ignora volatilidad y sobreventa,
         # para que siempre lo encuentres aunque se mueva poco).
@@ -1559,6 +1604,7 @@ with tab1:
             t = t[(t["RSI diario"] < lo) | (t["RSI 45 min"] < lo)]
         elif filtro == "Sobrecompra":
             t = t[(t["RSI diario"] > hi) | (t["RSI 45 min"] > hi)]
+        t = _aplicar_filtro_ma(t)
 
     def _precio_cel(r):
         if r["Es AR"]:
@@ -1653,6 +1699,15 @@ with tab2:
     tickers_yahoo = tuple(tk + ".BA" if base.loc[tk, "Es AR"] else tk for tk in base.index)
     f = fundamentales(tickers_yahoo)
     f.index = base.index
+    # Aviso si Yahoo limitó las consultas y faltan fundamentales (se completan al recargar)
+    con_pe = int(f["P/E"].notna().sum())
+    if con_pe < max(1, int(0.6 * len(f))):
+        c_av1, c_av2 = st.columns([4, 1], vertical_alignment="bottom")
+        c_av1.warning(f"Yahoo limitó las consultas: por ahora hay datos fundamentales (P/E, ROE, etc.) de "
+                      f"{con_pe} de {len(f)} acciones. Se completan solos al recargar la página en un minuto "
+                      "(los que ya se bajaron quedan guardados).")
+        if c_av2.button("🔄 Reintentar ahora", key="fund_retry"):
+            st.rerun()
     divs_raw = dividendos_12m(tickers_yahoo)
     divs = {tk: divs_raw.get(ytk, np.nan) for tk, ytk in zip(base.index, tickers_yahoo)}
     val = base[["Nombre", "Sector", "Precio USD", "Precio ARS", "Volumen USD (M)", "Var. diaria %", "Es AR", "Liquida"]].copy()
