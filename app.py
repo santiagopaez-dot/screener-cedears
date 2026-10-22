@@ -456,7 +456,7 @@ def rsi_45m(tickers, sufijo="", tz="America/New_York", inicio_min=570):
     d = yf.download(pedidos, period="1mo", interval="15m", auto_adjust=True, progress=False)["Close"]
     if isinstance(d, pd.Series):
         d = d.to_frame(pedidos[0])
-    out, ultima = {}, None
+    out, ultima, px = {}, None, {}
     for tp in d.columns:
         t = tp[:-len(sufijo)] if sufijo and tp.endswith(sufijo) else tp
         s = d[tp].dropna()
@@ -466,6 +466,10 @@ def rsi_45m(tickers, sufijo="", tz="America/New_York", inicio_min=570):
         # Yahoo puede entregar la hora en UTC: se pasa siempre al huso horario de la rueda
         idx = s.index.tz_localize("UTC") if s.index.tz is None else s.index
         s.index = idx.tz_convert(tz)
+        # Último precio intradiario real (la misma descarga que alimenta el RSI 45 min, que sí
+        # llega: evita el batch pesado de 5 min para 240 tickers que Yahoo rechazaba y dejaba
+        # el precio en el cierre de ayer). Está demorado ~15 min, pero es de HOY, no de ayer.
+        px[t] = (float(s.iloc[-1]), s.index[-1])
         dia = np.array(s.index.date)
         # Bloque de 45 min según la hora de apertura, no por conteo de velas:
         # así, si Yahoo omite una vela de 15 min, el resto no se desfasa.
@@ -474,7 +478,7 @@ def rsi_45m(tickers, sufijo="", tz="America/New_York", inicio_min=570):
         c45 = s.groupby([dia, bloque]).last()
         out[t] = float(rsi(c45).iloc[-1])
         ultima = s.index[-1] if ultima is None or s.index[-1] > ultima else ultima
-    return pd.Series(out), ultima
+    return pd.Series(out), ultima, px
 
 
 @st.cache_data(persist="disk", ttl=6 * 3600, show_spinner=False)
@@ -1117,6 +1121,72 @@ def calcular_cartera(ops, close, mep=None, pagos=None):
     return out, qty
 
 
+def posiciones_cartera(ops, close, mep_hoy=None):
+    """Tenencias actuales con precio de compra promedio y rendimiento por activo.
+    Usa el método de costo promedio ponderado: el precio de compra es el precio de mercado
+    (USD por acción de Nueva York) del día de cada operación — el mismo que usa la valuación,
+    así el rendimiento por activo reconcilia con la ganancia total. Devuelve un DataFrame por ticker:
+    cantidad, precio de compra prom. (USD), precio actual (USD), costo, valor y rendimiento (US$ y %)."""
+    ops = ops.copy()
+    ops["Fecha"] = pd.to_datetime(ops["Fecha"])
+    idx = close.index
+    qc = {}          # ticker -> [cantidad acumulada, costo acumulado en USD]
+    for _, o in ops.sort_values("Fecha").iterrows():
+        tipo = o["Operación"]
+        if tipo not in ("Compra", "Venta", "Cambio"):
+            continue
+        pos = min(idx.searchsorted(o["Fecha"]), len(idx) - 1)
+        d = idx[pos]
+
+        def _precio(t):
+            p = close.loc[d, t] if t in close.columns else np.nan
+            return float(p) if pd.notna(p) else np.nan
+
+        if tipo in ("Compra", "Venta"):
+            t = o["Ticker"]
+            p = _precio(t)
+            if not np.isfinite(p):
+                continue
+            q, c = qc.get(t, [0.0, 0.0])
+            if tipo == "Compra":
+                q, c = q + o["Cantidad"], c + o["Cantidad"] * p
+            else:                                   # Venta: baja el costo en forma proporcional
+                if q > 0:
+                    c -= min(o["Cantidad"], q) / q * c
+                q -= o["Cantidad"]
+            qc[t] = [q, c]
+        else:                                        # Cambio: vende t1 y compra t2 con lo obtenido
+            t1, t2 = o["Ticker"], o.get("Ticker destino")
+            p1, p2 = _precio(t1), _precio(t2)
+            if not (np.isfinite(p1) and np.isfinite(p2)):
+                continue
+            q1, c1 = qc.get(t1, [0.0, 0.0])
+            proceeds = o["Cantidad"] * p1
+            if q1 > 0:
+                c1 -= min(o["Cantidad"], q1) / q1 * c1
+            qc[t1] = [q1 - o["Cantidad"], c1]
+            q2, c2 = qc.get(t2, [0.0, 0.0])
+            qc[t2] = [q2 + o["Cantidad"] * p1 / p2, c2 + proceeds]
+
+    filas = []
+    for t, (q, c) in qc.items():
+        if q <= 1e-9:                                # ya no se tiene; se ignora
+            continue
+        p_act = float(close.loc[idx[-1], t]) if (t in close.columns and pd.notna(close.loc[idx[-1], t])) else np.nan
+        p_compra = c / q if q else np.nan            # costo promedio por acción (USD)
+        valor = q * p_act if np.isfinite(p_act) else np.nan
+        rend_usd = valor - c if np.isfinite(valor) else np.nan
+        rend_pct = (rend_usd / c * 100) if c else np.nan
+        filas.append({"Ticker": t, "Cantidad": q, "P. compra USD": p_compra, "P. actual USD": p_act,
+                      "Costo USD": c, "Valor USD": valor, "Rend. USD": rend_usd, "Rend. %": rend_pct})
+    cols = ["Cantidad", "P. compra USD", "P. actual USD", "Costo USD", "Valor USD", "Rend. USD", "Rend. %"]
+    pos = pd.DataFrame(filas).set_index("Ticker") if filas else pd.DataFrame(columns=cols)
+    if mep_hoy and not pos.empty:                    # versión en pesos al dólar MEP de hoy
+        for col in ("P. compra USD", "P. actual USD", "Costo USD", "Valor USD", "Rend. USD"):
+            pos[col.replace("USD", "ARS")] = pos[col] * mep_hoy
+    return pos.sort_values("Valor USD", ascending=False) if not pos.empty else pos
+
+
 def retorno_diario(valor, flujo):
     """Retorno de cada día sin el efecto de los aportes: valor / (valor anterior + aporte del día) - 1."""
     base = valor.shift(1).fillna(0) + flujo
@@ -1468,10 +1538,11 @@ tabla.index.name = "Ticker"
 tabla["Var. diaria %"] = ((close.iloc[-1] / close.iloc[-2] - 1) * 100).values
 
 try:
-    r45, ult_intra = rsi_45m(tuple(tabla.index))
+    r45, ult_intra, px_intra = rsi_45m(tuple(tabla.index))
     tabla["RSI 45 min"] = r45.reindex(tabla.index)
 except Exception:
     ult_intra = None
+    px_intra = {}
     tabla["RSI 45 min"] = np.nan
 
 # Acciones argentinas (cotizan solo en pesos en BYMA, no tienen contraparte en Nueva York)
@@ -1491,16 +1562,18 @@ if not close_ar.empty and MEP_HOY:
     tabla_ar.index.name = "Ticker"
     tabla_ar["Var. diaria %"] = ((close_ar.iloc[-1] / close_ar.iloc[-2] - 1) * 100).values
     try:
-        r45_ar, ult_intra_ar = rsi_45m(tuple(tabla_ar.index), sufijo=".BA",
+        r45_ar, ult_intra_ar, px_intra_ar = rsi_45m(tuple(tabla_ar.index), sufijo=".BA",
                                         tz="America/Argentina/Buenos_Aires", inicio_min=660)
         tabla_ar["RSI 45 min"] = r45_ar.reindex(tabla_ar.index)
     except Exception:
         ult_intra_ar = None
+        px_intra_ar = {}
         tabla_ar["RSI 45 min"] = np.nan
     tabla = pd.concat([tabla, tabla_ar], sort=True)
     tabla.index.name = "Ticker"
 else:
     ult_intra_ar = None
+    px_intra_ar = {}
 
 # Liquidez: cada mercado tiene su propio piso de volumen (ver MIN_VOLUMEN_USD_M_AR)
 tabla["Es AR"] = tabla["Sector"].str.startswith("🇦🇷")
@@ -1527,6 +1600,55 @@ for _n in (30, 50, 200):
         _partes.append((close_ar.iloc[-1] / close_ar.rolling(_n).mean().iloc[-1] - 1) * 100)
     tabla[f"MA{_n} %"] = pd.concat(_partes).reindex(tabla.index)
 
+# --- Precio de HOY (intradiario) ----------------------------------------------
+# El "cierre diario" de Yahoo todavía es el de AYER mientras la rueda está abierta, así que el
+# precio mostrado quedaba viejo toda la jornada. Pisamos el precio con el último dato intradiario
+# de 15 min (la misma descarga del RSI 45 min, que sí llega), siempre que sea de hoy. Queda
+# demorado ~15 min (límite de Yahoo gratis) pero es el precio de HOY, no el de ayer.
+_hoy_ny = datetime.now(ZoneInfo("America/New_York")).date()
+ts_vivo = None          # marca de tiempo del dato más reciente aplicado (para el cartel)
+n_vivo = 0              # cuántos activos quedaron con precio de hoy
+
+
+def _aplicar_intradiario(px_dict, es_ar):
+    """Pisa Precio USD/ARS y Var. diaria % con el último precio intradiario de hoy."""
+    global ts_vivo, n_vivo
+    for tk, (p, ts) in (px_dict or {}).items():
+        if tk not in tabla.index or p is None or not np.isfinite(p) or p <= 0:
+            continue
+        cls = close_ar if es_ar else close
+        if cls is None or cls.empty or tk not in cls.columns:
+            continue
+        s = cls[tk].dropna()
+        if len(s) < 2:
+            continue
+        # base de la variación: el último cierre diario que NO sea de hoy
+        base = s.iloc[-2] if s.index[-1].date() == ts.date() else s.iloc[-1]
+        if es_ar:
+            tabla.loc[tk, "Precio ARS"] = p
+            if MEP_HOY:
+                tabla.loc[tk, "Precio USD"] = p / MEP_HOY
+        else:
+            tabla.loc[tk, "Precio USD"] = p
+        if base and np.isfinite(base) and base > 0:
+            tabla.loc[tk, "Var. diaria %"] = (p / base - 1) * 100
+        n_vivo += 1
+        if ts_vivo is None or ts > ts_vivo:
+            ts_vivo = ts
+
+
+# Solo si el dato intradiario es de hoy (si no, el cierre diario ya es lo más reciente).
+if ult_intra is not None and ult_intra.date() == _hoy_ny:
+    _aplicar_intradiario(px_intra, es_ar=False)
+if ult_intra_ar is not None and ult_intra_ar.date() == datetime.now(
+        ZoneInfo("America/Argentina/Buenos_Aires")).date():
+    _aplicar_intradiario(px_intra_ar, es_ar=True)
+
+precios_en_vivo = n_vivo > 0
+if precios_en_vivo and CCL_REF:
+    tabla["CCL implícito"] = tabla["Precio ARS"] * tabla["Ratio"] / tabla["Precio USD"]
+    tabla["Desvío CCL %"] = (tabla["CCL implícito"] / CCL_REF - 1) * 100
+
 # --- 1. CEDEARs: trading ------------------------------------------------------
 with tab1:
     H('<div class="eyebrow m">Análisis técnico</div><div class="h2">RSI, medias móviles y pre-market</div>')
@@ -1536,36 +1658,14 @@ with tab1:
     tabla["Pre %"] = np.nan
     tabla["Pre precio"] = np.nan
     tabla["RSI prov"] = np.nan
-    precios_en_vivo = False
-    # Con el mercado ABIERTO, el "cierre diario" todavía es el de ayer. Usamos el precio en vivo de hoy
-    # para el precio mostrado y la variación del día (solo CEDEARs; las acciones argentinas van por BYMA).
-    if estado_ny == "regular":
-        try:
-            cedear_vivo = tuple(sorted(tabla.index[(~tabla["Es AR"]) & tabla["Liquida"]]))
-            ext_vivo = precios_extended(cedear_vivo)
-            hoy_ny = ahora_ny.date()
-            for tk, (p, ts) in ext_vivo.items():
-                if tk in tabla.index and tk in close.columns:
-                    s = close[tk].dropna()
-                    if len(s) >= 2:
-                        base = s.iloc[-2] if s.index[-1].date() == hoy_ny else s.iloc[-1]
-                        tabla.loc[tk, "Precio USD"] = p
-                        tabla.loc[tk, "Var. diaria %"] = (p / base - 1) * 100
-                        precios_en_vivo = True
-            if precios_en_vivo and CCL_REF:
-                tabla["CCL implícito"] = tabla["Precio ARS"] * tabla["Ratio"] / tabla["Precio USD"]
-                tabla["Desvío CCL %"] = (tabla["CCL implícito"] / CCL_REF - 1) * 100
-        except Exception:
-            pass
-
-    if precios_en_vivo:
-        txt = f"🟢 Precios de CEDEARs **en vivo** ({ahora_ny:%H:%M} hora de Nueva York). Acciones argentinas y datos diarios al {close.index[-1].date()}"
+    # El precio de hoy ya se aplicó más arriba (bloque intradiario, reutilizando el RSI 45 min).
+    if precios_en_vivo and ts_vivo is not None:
+        txt = (f"🟢 Precios de **hoy** actualizados hasta las {ts_vivo:%H:%M} (NY), demorados ~15 min "
+               f"(límite de Yahoo gratis). {n_vivo} activos con precio de hoy")
     else:
         txt = f"Datos diarios al {close.index[-1].date()}"
-    txt += (f" · intradiario hasta {ult_intra:%d/%m %H:%M} (NY)" if ult_intra is not None
-            else " · RSI de 45 min no disponible ahora")
     if ult_intra_ar is not None:
-        txt += f" · acciones argentinas hasta {ult_intra_ar:%d/%m %H:%M} (Argentina)"
+        txt += f" · acciones argentinas hasta {ult_intra_ar:%H:%M} (Argentina)"
     st.caption(txt)
 
     lo, hi = RSI_BAJO, RSI_ALTO
@@ -2755,6 +2855,14 @@ with tab6:
             except Exception:
                 mep = None
             close, pagos = datos_cartera(tickers, inicio, mep)
+            # Precio de HOY en la última fila: reutiliza el intradiario de 15 min del panel técnico
+            # (demorado ~15 min, pero de hoy) para que la valuación no quede en el cierre de ayer.
+            try:
+                for _t, (_p, _ts) in (px_intra or {}).items():
+                    if _t in close.columns and np.isfinite(_p) and _p > 0:
+                        close.iloc[-1, close.columns.get_loc(_t)] = _p
+            except Exception:
+                pass
             faltan = [t for t in tickers if t not in close.columns or close[t].dropna().empty]
             if faltan:
                 error = (f"No encontré precios para: {', '.join(nombre_activo(t) for t in faltan)}. Para acciones usá el ticker de Nueva York "
@@ -2894,6 +3002,52 @@ with tab6:
                            items, "Tenencia actual", "card_comp_cartera")
             with st.expander("Ver la tenencia en detalle"):
                 st.dataframe(ten.style.format(precision=2, na_rep="-"), width="stretch")
+
+            # --- Precio de compra y rendimiento por activo ---
+            pos = posiciones_cartera(ops, close, MEP_HOY)
+            if not pos.empty:
+                cost_u = pos["Costo USD"].sum()
+                val_u = pos["Valor USD"].sum()
+                rend_u = val_u - cost_u
+                pct_u = rend_u / cost_u * 100 if cost_u else np.nan
+                mep_now = MEP_HOY or np.nan
+                H('<div class="eyebrow m" style="margin-top:18px">Por activo</div>'
+                  '<div class="h2">Precio de compra y rendimiento</div>'
+                  '<div class="sub" style="margin-bottom:10px">Qué pagaste (precio de compra promedio), a cuánto cotiza hoy y cuánto '
+                  'ganaste o perdiste con cada activo, en dólares y en pesos.</div>')
+                H(E.strip([
+                    ("Invertido (costo)", E.num(cost_u, 1, "US$ "), f"≈ $ {E.num(cost_u * mep_now, 0)}" if MEP_HOY else "", False),
+                    ("Valor hoy", E.num(val_u, 1, "US$ "), f"≈ $ {E.num(val_u * mep_now, 0)}" if MEP_HOY else "", False),
+                    ("Rendimiento US$", E.num(rend_u, 1, "US$ ", signo=True), f"≈ $ {E.num(rend_u * mep_now, 0)}" if MEP_HOY else "", True),
+                    ("Rendimiento %", E.num(pct_u, 2, suf="%", signo=True), "Sobre lo invertido", False)]))
+                disp = pd.DataFrame(index=pos.index)
+                disp["Cantidad"] = pos["Cantidad"]
+                disp["Compra US$"] = pos["P. compra USD"]
+                disp["Hoy US$"] = pos["P. actual USD"]
+                disp["Rend. US$"] = pos["Rend. USD"]
+                if "Rend. ARS" in pos:
+                    disp["Compra $"] = pos["P. compra ARS"]
+                    disp["Hoy $"] = pos["P. actual ARS"]
+                    disp["Rend. $"] = pos["Rend. ARS"]
+                disp["Rend. %"] = pos["Rend. %"]
+                disp.index = [nombre_activo(i) for i in disp.index]
+                disp.index.name = "Activo"
+                st.dataframe(
+                    disp,
+                    width="stretch",
+                    column_config={
+                        "Cantidad": st.column_config.NumberColumn(format="%.2f"),
+                        "Compra US$": st.column_config.NumberColumn(format="US$ %.2f", help="Precio de compra promedio (costo promedio ponderado)."),
+                        "Hoy US$": st.column_config.NumberColumn(format="US$ %.2f", help="Precio actual (hoy, demorado ~15 min)."),
+                        "Rend. US$": st.column_config.NumberColumn(format="US$ %+.1f"),
+                        "Compra $": st.column_config.NumberColumn(format="$ %.0f"),
+                        "Hoy $": st.column_config.NumberColumn(format="$ %.0f"),
+                        "Rend. $": st.column_config.NumberColumn(format="$ %+.0f"),
+                        "Rend. %": st.column_config.NumberColumn(format="%+.2f%%"),
+                    })
+                st.caption("Precio de compra = costo promedio ponderado al precio de mercado del día de cada operación (acciones de Nueva York, en US$). "
+                           "El rendimiento no incluye comisiones, impuestos ni dividendos. La conversión a pesos usa el dólar MEP de hoy"
+                           + (f" (${E.num(MEP_HOY, 0)})." if MEP_HOY else "."))
 
             # --- Evolución ---
             r_usd, m_usd = resumen_cartera(res["valor_usd"], res["flujo_usd"])
