@@ -206,8 +206,17 @@ INFO = {
     "IBIT": ('iShares Bitcoin Trust (BTC)', 'Cripto'), "ETHA": ('iShares Ethereum Trust (ETH)', 'Cripto'),
     "HUT": ('Hut 8 (minería BTC)', 'Cripto'), "RIOT": ('Riot Platforms (minería BTC)', 'Cripto'),
     "IREN": ('IREN (minería BTC)', 'Cripto'), "BMNR": ('Bitmine Immersion', 'Cripto'),
-    # ETF temático
-    "URA": ('Global X Uranium ETF', 'ETF temático'),
+    # ETF / Índices
+    "URA": ('Global X Uranium ETF', 'ETF / Índices'), "SPY": ('S&P 500 (SPY)', 'ETF / Índices'),
+    "QQQ": ('Nasdaq 100 (QQQ)', 'ETF / Índices'), "DIA": ('Dow Jones (DIA)', 'ETF / Índices'),
+    "IWM": ('Russell 2000 (IWM)', 'ETF / Índices'), "XLE": ('Energía / Petroleras (XLE)', 'ETF / Índices'),
+    "XLF": ('Bancos / Financiero (XLF)', 'ETF / Índices'), "XLK": ('Tecnología (XLK)', 'ETF / Índices'),
+    "XLV": ('Salud (XLV)', 'ETF / Índices'), "XLY": ('Consumo discrecional (XLY)', 'ETF / Índices'),
+    "XLP": ('Consumo básico (XLP)', 'ETF / Índices'), "XLI": ('Industriales (XLI)', 'ETF / Índices'),
+    "XLB": ('Materiales (XLB)', 'ETF / Índices'), "CIBR": ('Ciberseguridad (CIBR)', 'ETF / Índices'),
+    "ARKK": ('Innovación / ARK (ARKK)', 'ETF / Índices'), "GLD": ('Oro (GLD)', 'ETF / Índices'),
+    "SLV": ('Plata (SLV)', 'ETF / Índices'), "COPX": ('Cobre / Mineras (COPX)', 'ETF / Índices'),
+    "GDX": ('Oro / Mineras (GDX)', 'ETF / Índices'),
 }
 TICKERS = list(INFO)
 
@@ -472,9 +481,12 @@ def rsi_45m(tickers, sufijo="", tz="America/New_York", inicio_min=570):
 def _fundamental_uno(t):
     """Datos fundamentales de un ticker. Si Yahoo no devuelve nada (rate limit), LANZA excepción
     para que st.cache_data NO cachee el fallo y se reintente en la próxima recarga."""
-    i = yf.Ticker(t).info
+    i = yf.Ticker(t).info or {}
     pe, sector = i.get("trailingPE"), i.get("sector")
-    if pe is None and sector is None and i.get("forwardPE") is None:
+    # Si la respuesta viene vacía (sin nombre ni tipo), es probable rate limit → lanzar para reintentar.
+    # Si viene una respuesta válida (p. ej. un ETF) pero sin P/E, se devuelve igual y se cachea.
+    valida = any(i.get(k) for k in ("quoteType", "longName", "shortName", "sector", "trailingPE", "forwardPE"))
+    if not valida:
         raise ValueError("sin datos (probable rate limit de Yahoo)")
     roe, deuda, ebitda = i.get("returnOnEquity"), i.get("totalDebt"), i.get("ebitda")
     return {"Sector": sector, "P/E": pe, "P/E futuro": i.get("forwardPE"), "P/B": i.get("priceToBook"),
@@ -752,7 +764,7 @@ def panorama_mercado():
     except Exception:
         pass
     try:
-        idx = yf.download(["^GSPC", "^IXIC", "^DJI", "^MERV"], period="2mo", auto_adjust=True, progress=False)["Close"]
+        idx = yf.download(["^GSPC", "^IXIC", "^DJI", "^MERV", "^VIX"], period="2mo", auto_adjust=True, progress=False)["Close"]
         merv = _limpia_fecha(idx["^MERV"].dropna().copy()) if "^MERV" in idx else None
         if merv is not None and len(merv) > 2:
             if "contadoconliqui" in hist:
@@ -770,6 +782,24 @@ def panorama_mercado():
                 h = idx[sym].dropna()
                 if len(h) >= 2:
                     pct(nombre, sub, float(h.iloc[-1]), list(h.tail(30)), lambda x: E.num(x, 0))
+        if "^VIX" in idx:
+            hv = idx["^VIX"].dropna()
+            if len(hv) >= 2:
+                pct("VIX", "Índice del miedo", float(hv.iloc[-1]), list(hv.tail(30)), lambda x: E.num(x, 2),
+                    "Volatilidad esperada del S&P 500. Sube con el miedo y las caídas; baja con la calma.")
+    except Exception:
+        pass
+    # Commodities y cripto
+    try:
+        com = yf.download(["GC=F", "SI=F", "HG=F", "CL=F", "BTC-USD", "ETH-USD"], period="2mo",
+                          auto_adjust=True, progress=False)["Close"]
+        for sym, nombre, sub, dec in (("GC=F", "Oro", "US$/onza", 0), ("SI=F", "Plata", "US$/onza", 2),
+                                      ("HG=F", "Cobre", "US$/libra", 2), ("CL=F", "Petróleo WTI", "US$/barril", 2),
+                                      ("BTC-USD", "Bitcoin", "USD", 0), ("ETH-USD", "Ethereum", "USD", 0)):
+            if sym in com:
+                h = com[sym].dropna()
+                if len(h) >= 2:
+                    pct(nombre, sub, float(h.iloc[-1]), list(h.tail(30)), (lambda d: lambda x: E.num(x, d, "US$ "))(dec))
     except Exception:
         pass
     return items
