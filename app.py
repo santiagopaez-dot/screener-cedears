@@ -1089,10 +1089,24 @@ def datos_cartera(keys, inicio, mep):
     return pd.DataFrame(cols, index=idx), pagos
 
 
+def _precio_usd_op(o, d, p_mercado, mep_idx):
+    """USD por CEDEAR efectivo de una Compra/Venta: si el usuario cargó el precio al que operó (columna
+    Monto), se usa ese (convertido desde ARS con el MEP del día); si no, el precio de mercado estimado."""
+    pc = o.get("Monto")
+    if pd.notna(pc) and pc > 0:
+        if str(o.get("Moneda")) == "ARS":
+            if mep_idx is not None and d in mep_idx.index and pd.notna(mep_idx.loc[d]):
+                return float(pc) / float(mep_idx.loc[d])
+            return p_mercado                      # sin MEP para convertir: cae al precio de mercado
+        return float(pc)                          # ya está en USD por CEDEAR
+    return p_mercado
+
+
 def calcular_cartera(ops, close, mep=None, pagos=None):
     """Operaciones posteriores al último día con precios (hoy, un fin de semana) se aplican con el último precio disponible.
     ops: Fecha, Operación (Compra/Venta/Depósito/Retiro/Cambio), Ticker, Cantidad, Monto, Moneda, Ticker destino (solo Cambio).
-    close: precios diarios en USD por ticker. mep: Serie con pesos por dólar (opcional).
+    En Compra/Venta, Monto (opcional) es el precio por CEDEAR al que operaste y Moneda su moneda; si está, se usa
+    ese en vez del precio de mercado. close: precios diarios en USD por CEDEAR. mep: Serie con pesos por dólar (opcional).
     Compras y ventas al cierre del día (o del primer día de mercado posterior)."""
     ops = ops.copy()
     ops["Fecha"] = pd.to_datetime(ops["Fecha"])
@@ -1114,6 +1128,7 @@ def calcular_cartera(ops, close, mep=None, pagos=None):
             p = close.loc[d, o["Ticker"]]
             if pd.isna(p):
                 raise ValueError(f"No hay precio de {o['Ticker']} el {d.date()}.")
+            p = _precio_usd_op(o, d, p, mep)      # usa el precio que cargaste, si lo cargaste
             qty.loc[d:, o["Ticker"]] += sg * o["Cantidad"]
             cash.loc[d:] -= sg * o["Cantidad"] * p
         elif tipo == "Cambio":
@@ -1147,15 +1162,18 @@ def calcular_cartera(ops, close, mep=None, pagos=None):
     return out, qty
 
 
-def posiciones_cartera(ops, close, mep_hoy=None):
+def posiciones_cartera(ops, close, mep_hoy=None, mep_serie=None):
     """Tenencias actuales con precio de compra promedio y rendimiento por activo.
-    Usa el método de costo promedio ponderado: el precio de compra es el precio de mercado
-    (USD por acción de Nueva York) del día de cada operación — el mismo que usa la valuación,
-    así el rendimiento por activo reconcilia con la ganancia total. Devuelve un DataFrame por ticker:
-    cantidad, precio de compra prom. (USD), precio actual (USD), costo, valor y rendimiento (US$ y %)."""
+    Usa el método de costo promedio ponderado. El precio de compra es el que cargaste (columna Monto,
+    convertido desde ARS con el MEP del día) o, si no lo cargaste, el precio de mercado del día de cada
+    operación — el mismo que usa la valuación, así el rendimiento reconcilia con la ganancia total.
+    mep_serie: Serie histórica de pesos por dólar (para convertir precios cargados en ARS)."""
     ops = ops.copy()
     ops["Fecha"] = pd.to_datetime(ops["Fecha"])
     idx = close.index
+    mep_idx = None
+    if mep_serie is not None:
+        mep_idx = mep_serie.reindex(mep_serie.index.union(idx)).ffill().bfill().reindex(idx)
     qc = {}          # ticker -> [cantidad acumulada, costo acumulado en USD]
     for _, o in ops.sort_values("Fecha").iterrows():
         tipo = o["Operación"]
@@ -1173,6 +1191,7 @@ def posiciones_cartera(ops, close, mep_hoy=None):
             p = _precio(t)
             if not np.isfinite(p):
                 continue
+            p = _precio_usd_op(o, d, p, mep_idx)      # usa el precio que cargaste, si lo cargaste
             q, c = qc.get(t, [0.0, 0.0])
             if tipo == "Compra":
                 q, c = q + o["Cantidad"], c + o["Cantidad"] * p
@@ -3101,7 +3120,7 @@ with tab6:
                 st.dataframe(ten.style.format(precision=2, na_rep="-"), width="stretch")
 
             # --- Precio de compra y rendimiento por activo ---
-            pos = posiciones_cartera(ops, close, MEP_HOY)
+            pos = posiciones_cartera(ops, close, MEP_HOY, mep_serie=mep)
             if not pos.empty:
                 cost_u = pos["Costo USD"].sum()
                 val_u = pos["Valor USD"].sum()
