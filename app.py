@@ -2534,8 +2534,16 @@ with tab6:
                 'aplicar todos estos movimientos.</div>')
         t_hist = st.container()
         with st.expander("Editar, borrar o cargar movimientos"):
-            st.caption("Podés corregir una fila, borrarla (seleccionala y apretá Supr) o agregar una a mano. También podés cargar un historial "
-                       "guardado en CSV.")
+            st.caption("Los movimientos que ves son un **ejemplo** para mostrar cómo funciona. Para armar tu propia cartera, apretá "
+                       "«Vaciar» y cargá los tuyos. También podés corregir una fila, borrarla (seleccionala y apretá Supr) o agregar "
+                       "una a mano, o cargar un historial guardado en CSV.")
+            cz1, cz2 = st.columns([1, 3])
+            if cz1.button("🗑️ Vaciar (empezar de cero)", key="cart_vaciar",
+                          help="Borra todos los movimientos de ejemplo para que cargues los tuyos desde cero."):
+                st.session_state.cart_ops = pd.DataFrame(columns=COLS_OPS)
+                st.session_state.cart_ver += 1
+                st.session_state.pop("cart_up_name", None)
+                st.rerun()
             up = st.file_uploader("Cargar un historial guardado (CSV)", type="csv", key="cart_up")
             if up is not None and st.session_state.get("cart_up_name") != up.name:
                 try:
