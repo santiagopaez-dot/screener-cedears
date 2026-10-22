@@ -2845,6 +2845,7 @@ with tab6:
     ops, n_malas = preparar_ops(ed)
     res = qty = close = None
     error = None
+    aviso_faltan = None
     tickers = sorted(set(ops.loc[ops["Operación"].isin(["Compra", "Venta", "Cambio"]), "Ticker"])
                      | set(ops.loc[ops["Operación"] == "Cambio", "Ticker destino"]))
     if not ops.empty and tickers:
@@ -2865,8 +2866,14 @@ with tab6:
                 pass
             faltan = [t for t in tickers if t not in close.columns or close[t].dropna().empty]
             if faltan:
-                error = (f"No encontré precios para: {', '.join(nombre_activo(t) for t in faltan)}. Para acciones usá el ticker de Nueva York "
-                         "(ej. AAPL); los fondos y bonos salen de las listas del formulario.")
+                # Un ticker sin precio (ej. un typo como LRCXX) ya NO tira abajo toda la cartera:
+                # se ignora, se avisa, y se calcula con el resto de los movimientos.
+                aviso_faltan = (f"Ignoré los movimientos de: {', '.join(nombre_activo(t) for t in faltan)} porque no encontré su precio "
+                                "(revisá el ticker: para acciones usá el de Nueva York, ej. AAPL). El resto de la cartera se calculó igual.")
+                _bad = set(faltan)
+                ops = ops[~(ops["Ticker"].isin(_bad) | ops["Ticker destino"].isin(_bad))].reset_index(drop=True)
+            if ops.empty or not any(ops["Operación"].isin(["Compra", "Venta", "Cambio", "Depósito", "Retiro"])):
+                res = qty = None
             else:
                 res, qty = calcular_cartera(ops, close, mep, pagos)
         except ValueError as e:
@@ -2978,6 +2985,8 @@ with tab6:
         if n_malas:
             st.error(f"{n_malas} fila(s) incompletas del historial se ignoran: las compras, ventas y cambios necesitan ticker y cantidad; "
                      "los depósitos y retiros, un monto.")
+        if aviso_faltan:
+            st.warning(aviso_faltan)
         if error:
             st.error(error)
         elif res is None:
