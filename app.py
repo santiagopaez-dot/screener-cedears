@@ -420,6 +420,32 @@ def precios_extended(tickers):
         return {}
 
 
+@st.cache_data(persist="disk", ttl=180, show_spinner=False)
+def precios_hoy_ny(tickers):
+    """Último precio intradiario de HOY (Nueva York, USD) por ticker, demorado ~15 min. Sirve para
+    valuar la cartera al día aunque el ticker no esté en el panel técnico. dict ticker -> precio."""
+    tickers = [t for t in (tickers or []) if isinstance(t, str) and "|" not in t]
+    if not tickers:
+        return {}
+    try:
+        d = yf.download(list(tickers), period="5d", interval="15m", auto_adjust=True, progress=False)["Close"]
+        if isinstance(d, pd.Series):
+            d = d.to_frame(tickers[0])
+        hoy = datetime.now(ZoneInfo("America/New_York")).date()
+        out = {}
+        for t in d.columns:
+            s = d[t].dropna()
+            if not len(s):
+                continue
+            idx = s.index.tz_localize("UTC") if s.index.tz is None else s.index
+            ts = idx.tz_convert("America/New_York")[-1]
+            if ts.date() == hoy:                       # solo si el dato es de hoy
+                out[t] = float(s.iloc[-1])
+        return out
+    except Exception:
+        return {}
+
+
 @st.cache_data(persist="disk", ttl=3600, show_spinner=False)
 def retornos_sp500():
     """Retornos diarios del S&P 500 (índice de mercado para la beta de CAPM)."""
@@ -2876,10 +2902,12 @@ with tab6:
                 _r = ratio_cedear(_t)
                 if _r and _r != 1:
                     close[_t] = close[_t] / _r
-            # Precio de HOY en la última fila: reutiliza el intradiario de 15 min del panel técnico
-            # (demorado ~15 min, pero de hoy) para que la valuación no quede en el cierre de ayer.
+            # Precio de HOY en la última fila: trae el intradiario de 15 min de los tickers que tenés
+            # (demorado ~15 min, pero de hoy) para que la valuación no quede en el cierre de ayer,
+            # aunque el ticker no esté en el panel técnico. Se pasa a precio por CEDEAR (÷ ratio).
             try:
-                for _t, (_p, _ts) in (px_intra or {}).items():
+                _live = precios_hoy_ny(tuple(sorted(t for t in close.columns if "|" not in str(t))))
+                for _t, _p in _live.items():
                     if _t in close.columns and np.isfinite(_p) and _p > 0:
                         close.iloc[-1, close.columns.get_loc(_t)] = _p / ratio_cedear(_t)
             except Exception:
@@ -2950,18 +2978,18 @@ with tab6:
                 mon = g2.selectbox("Moneda", ["USD", "ARS"])
             elif tipo == "Comprar":
                 tk = selector_activo(g1, "cart_activo")
-                cant = g2.number_input(UNIDAD[clase], min_value=0.0, step=1.0, format="%d")
+                cant = g2.number_input(UNIDAD[clase], min_value=0.0, step=1.0)
                 st.caption("Las cantidades son en **CEDEARs enteros** (lo que comprás en Argentina). Se compra al precio de cierre del día. "
                            "Si no tenés efectivo suficiente, primero depositá dinero.")
             elif tipo == "Vender":
                 tk = g1.selectbox("Activo que vendés", tenidas or [None],
                                   format_func=lambda k: "(todavía no tenés activos)" if k is None else nombre_activo(k))
-                cant = g2.number_input("Cantidad (CEDEARs, cuotapartes o VN)", min_value=0.0, step=1.0, format="%d",
+                cant = g2.number_input("Cantidad (CEDEARs, cuotapartes o VN)", min_value=0.0, step=1.0,
                                        help=f"Tenés {ult_qty.get(tk, 0):,.0f}" if tk is not None else None)
             else:
                 tk = g1.selectbox("Vendo", tenidas or [None],
                                   format_func=lambda k: "(todavía no tenés activos)" if k is None else nombre_activo(k))
-                cant = g2.number_input("Cantidad que vendo (CEDEARs)", min_value=0.0, step=1.0, format="%d")
+                cant = g2.number_input("Cantidad que vendo (CEDEARs)", min_value=0.0, step=1.0)
                 tk2 = selector_activo(st, "cart_activo_destino")
                 st.caption("La compra se hace con lo que se obtiene de la venta, a los precios de cierre del día. "
                            "Después de agregarlo, la tenencia actual ya aparece cambiada.")
@@ -3056,34 +3084,33 @@ with tab6:
                     ("Valor hoy", E.num(val_u, 1, "US$ "), f"≈ $ {E.num(val_u * mep_now, 0)}" if MEP_HOY else "", False),
                     ("Rendimiento US$", E.num(rend_u, 1, "US$ ", signo=True), f"≈ $ {E.num(rend_u * mep_now, 0)}" if MEP_HOY else "", True),
                     ("Rendimiento %", E.num(pct_u, 2, suf="%", signo=True), "Sobre lo invertido", False)]))
-                # Cantidad en CEDEARs y precios por CEDEAR (ya vienen así de la valuación).
-                disp = pd.DataFrame(index=pos.index)
-                disp["Cantidad"] = pos["Cantidad"]
-                disp["Compra US$"] = pos["P. compra USD"]
-                disp["Hoy US$"] = pos["P. actual USD"]
-                disp["Rend. US$"] = pos["Rend. USD"]
-                if "Rend. ARS" in pos:
-                    disp["Compra $"] = pos["P. compra ARS"]
-                    disp["Hoy $"] = pos["P. actual ARS"]
-                    disp["Rend. $"] = pos["Rend. ARS"]
-                disp["Rend. %"] = pos["Rend. %"]
-                disp.index = [nombre_activo(i) for i in disp.index]
-                disp.index.name = "Activo"
-                st.dataframe(
-                    disp,
-                    width="stretch",
-                    column_config={
-                        "Cantidad": st.column_config.NumberColumn(format="%.0f", help="Cantidad de CEDEARs (acciones argentinas). Para fondos y bonos, cuotapartes o valor nominal."),
-                        "Compra US$": st.column_config.NumberColumn(format="US$ %.2f", help="Precio de compra promedio (costo promedio ponderado)."),
-                        "Hoy US$": st.column_config.NumberColumn(format="US$ %.2f", help="Precio actual (hoy, demorado ~15 min)."),
-                        "Rend. US$": st.column_config.NumberColumn(format="US$ %+.1f"),
-                        "Compra $": st.column_config.NumberColumn(format="$ %.0f"),
-                        "Hoy $": st.column_config.NumberColumn(format="$ %.0f"),
-                        "Rend. $": st.column_config.NumberColumn(format="$ %+.0f"),
-                        "Rend. %": st.column_config.NumberColumn(format="%+.2f%%"),
-                    })
-                st.caption("Precio de compra = costo promedio ponderado al precio de mercado del día de cada operación (acciones de Nueva York, en US$). "
-                           "El rendimiento no incluye comisiones, impuestos ni dividendos. La conversión a pesos usa el dólar MEP de hoy"
+                # Tabla con el estilo del panel (verde sube, rojo baja). Cantidad en CEDEARs y
+                # precios por CEDEAR (ya vienen así de la valuación).
+                hay_ars = "Rend. ARS" in pos
+                def _px_cel(v_usd, v_ars):
+                    prim = f'<span class="strong">{E.num(v_usd, 2, "US$ ")}</span>'
+                    sec = f'<br><span class="muted" style="font-size:11px">{E.num(v_ars, 0, "$ ")}</span>' if hay_ars and v_ars == v_ars else ""
+                    return prim + sec
+                filas_pos = []
+                for tk, r in pos.iterrows():
+                    simbolo = str(tk).split("|")[-1]
+                    sub = simbolo if "|" not in str(tk) else ("Fondo" if str(tk).startswith("FCI") else "Bono")
+                    pct = r["Rend. %"]
+                    tipo = "up" if pct > 0.05 else ("down" if pct < -0.05 else "flat")
+                    rend = E.chip(f'{E.num(r["Rend. USD"], 1, "US$ ", signo=True)} · {E.num(pct, 2, suf="%", signo=True)}', tipo)
+                    if hay_ars and r["Rend. ARS"] == r["Rend. ARS"]:
+                        rend += f'<div class="muted" style="font-size:11px;margin-top:3px">{E.num(r["Rend. ARS"], 0, "$ ", signo=True)}</div>'
+                    filas_pos.append([
+                        E.activo(nombre_activo(tk), sub, simbolo[:3], E.color_de(tk)),
+                        f'<span class="strong">{E.num(r["Cantidad"], 0)}</span>',
+                        _px_cel(r["P. compra USD"], r.get("P. compra ARS", np.nan)),
+                        _px_cel(r["P. actual USD"], r.get("P. actual ARS", np.nan)),
+                        rend,
+                    ])
+                H(E.tabla([("Activo", "l"), ("Cantidad", "r"), ("Compra", "r"), ("Hoy", "r"), ("Rendimiento", "r")], filas_pos))
+                st.caption("Verde: ganás · Rojo: perdés. **Cantidad** en CEDEARs; **Compra** es el precio promedio al que compraste "
+                           "(costo promedio ponderado) y **Hoy** el precio actual del CEDEAR (demorado ~15 min). "
+                           "No incluye comisiones, impuestos ni dividendos; los pesos usan el dólar MEP de hoy"
                            + (f" (${E.num(MEP_HOY, 0)})." if MEP_HOY else "."))
 
             # --- Evolución ---
