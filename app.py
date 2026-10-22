@@ -1262,15 +1262,17 @@ def historial_html(ed):
     d["_f"] = pd.to_datetime(d["Fecha"])
     d = d.sort_values("_f", ascending=False)
     txt = lambda x: "" if pd.isna(x) else str(x)
+    # Cantidades enteras se muestran sin decimales (los CEDEARs son enteros).
+    qf = lambda q: E.num(q, 0) if (pd.notna(q) and abs(q - round(q)) < 1e-6) else E.num(q, 2)
     rows = []
     for _, o in d.head(20).iterrows():
         op = o["Operación"]
         if op in ("Depósito", "Retiro"):
             det, tipo = E.num(o["Monto"], 2, "US$ " if o["Moneda"] == "USD" else "$ "), "pur"
         elif op == "Cambio":
-            det, tipo = f"{E.num(o['Cantidad'], 2)} {E.esc(nombre_activo(txt(o['Ticker'])))} → {E.esc(nombre_activo(txt(o['Ticker destino'])))}", "sand"
+            det, tipo = f"{qf(o['Cantidad'])} {E.esc(nombre_activo(txt(o['Ticker'])))} → {E.esc(nombre_activo(txt(o['Ticker destino'])))}", "sand"
         else:
-            det, tipo = f"{E.num(o['Cantidad'], 2)} {E.esc(nombre_activo(txt(o['Ticker'])))}", "sand"
+            det, tipo = f"{qf(o['Cantidad'])} {E.esc(nombre_activo(txt(o['Ticker'])))}", "sand"
         rows.append([E.esc(o["_f"].strftime("%d/%m/%Y")), E.chip(op, tipo), f'<span class="strong">{det}</span>'])
     pie = f'<div class="sub" style="font-size:.85rem;margin-top:8px">Mostrando los últimos {min(20, len(d))} de {len(d)} movimientos.</div>'
     return E.tabla([("Fecha", "l"), ("Operación", "l"), ("Detalle", "l")], rows) + pie
@@ -1591,6 +1593,30 @@ tabla["Ratio"] = [np.nan if es_ar else RATIOS_CEDEAR.get(t, np.nan)
                   for t, es_ar in zip(tabla.index, tabla["Es AR"])]
 tabla["CCL implícito"] = tabla["Precio ARS"] * tabla["Ratio"] / tabla["Precio USD"]
 tabla["Desvío CCL %"] = (tabla["CCL implícito"] / CCL_REF - 1) * 100 if CCL_REF else np.nan
+
+# Ratio de conversión CEDEAR → acción de Nueva York (cuántos CEDEARs equivalen a 1 acción).
+# Sirve para mostrar y pedir las CANTIDADES en CEDEARs enteros (que es lo que se compra en Argentina),
+# aunque por dentro la cartera valúa en acciones de Nueva York. Primero el ratio cargado a mano;
+# si no está, se estima con el CCL: ratio ≈ Precio USD × CCL / Precio ARS.
+RATIOS_HOY = {}
+for _t in tabla.index:
+    if tabla.loc[_t, "Es AR"]:
+        continue
+    _r = RATIOS_CEDEAR.get(_t, np.nan)
+    if (pd.isna(_r) or _r <= 0) and CCL_REF:
+        _pu, _pa = tabla.loc[_t, "Precio USD"], tabla.loc[_t, "Precio ARS"]
+        if pd.notna(_pu) and pd.notna(_pa) and _pa > 0:
+            _r = _pu * CCL_REF / _pa
+    if pd.notna(_r) and _r > 0:
+        RATIOS_HOY[_t] = float(round(_r))        # los ratios son enteros (ej. 20, 24, 48)
+
+
+def ratio_cedear(t):
+    """CEDEARs por acción de Nueva York para el ticker t (1 si no se conoce o no es un CEDEAR)."""
+    if not isinstance(t, str) or "|" in t:       # fondos y bonos no son CEDEARs
+        return 1.0
+    r = RATIOS_HOY.get(t, 1.0)
+    return r if r and r > 0 else 1.0
 
 # Distancia del precio a sus medias móviles de 30, 50 y 200 ruedas (%). Positivo = precio por
 # encima de la media (tendencia alcista); negativo = por debajo. Sirve para ver tendencia.
@@ -2665,7 +2691,7 @@ def importar_csv_cartera(archivo, ratios=None):
 
     # Formato Cocos: historial de MOVIMIENTOS (tiene tipoOperacion y fechaEjecucion)
     if "tipooperacion" in cols and "fechaejecucion" in cols:
-        movs, sin_ratio = [], set()
+        movs = []
         for _, r in df.iterrows():
             tipo = str(r.get(cols["tipooperacion"], "")).strip()
             tl = tipo.lower()
@@ -2682,11 +2708,8 @@ def importar_csv_cartera(archivo, ratios=None):
                 tk = (m.group(1) if m else inst).strip().upper()
                 if pd.isna(cant) or cant == 0:
                     continue
-                ratio = ratios.get(tk)
-                qn = abs(cant) / ratio if ratio and ratio > 0 else abs(cant)
-                if not ratio:
-                    sin_ratio.add(tk)
-                movs.append([f, "Compra" if "compra" in tl else "Venta", tk, round(qn, 6), None, "USD", ""])
+                # Se guarda la cantidad de CEDEARs tal cual (entera): la app valúa por precio del CEDEAR.
+                movs.append([f, "Compra" if "compra" in tl else "Venta", tk, round(abs(cant)), None, "USD", ""])
             elif "recibo de cobro" in tl or "deposito" in tl or "depósito" in tl:
                 if pd.notna(total) and total > 0:
                     movs.append([f, "Depósito", "", None, round(abs(total), 2), mon, ""])
@@ -2703,13 +2726,10 @@ def importar_csv_cartera(archivo, ratios=None):
                 movs.append([f, "Depósito" if total > 0 else "Retiro", "", None, round(abs(total), 2), mon, ""])
         if not movs:
             raise ValueError("no encontré movimientos válidos")
-        nota_sr = (" No tengo el ratio de " + ", ".join(sorted(sin_ratio)) + " (se cargaron sin convertir; "
-                   "corregí la cantidad a mano si hace falta).") if sin_ratio else ""
-        msg = ("Importé tus **movimientos de Cocos**. Las compras/ventas de CEDEARs se pasaron a su equivalente en "
-               "acciones de Nueva York (por el ratio de cada CEDEAR), así la app las valúa bien. Las suscripciones y "
-               "rescates del FCI (Cocos Pesos Plus) se tratan como **entradas/salidas de efectivo**, porque ese fondo "
-               "money-market funciona como tu caja. Puede quedar alguna diferencia chica contra lo que ves en Cocos "
-               "(ratios, comisiones y spread del CEDEAR)." + nota_sr)
+        msg = ("Importé tus **movimientos de Cocos**. Las compras/ventas quedan en **cantidad de CEDEARs** (como en "
+               "Cocos) y la app las valúa por el precio del CEDEAR. Las suscripciones y rescates del FCI (Cocos Pesos "
+               "Plus) se tratan como **entradas/salidas de efectivo**, porque ese fondo money-market funciona como tu "
+               "caja. Puede quedar alguna diferencia chica contra lo que ves en Cocos (comisiones y spread).")
         return pd.DataFrame(movs, columns=COLS_OPS), msg
 
     # Formato Cocos: foto de tenencia (instrumento; cantidad; precio; precioAsOf; moneda; total; ...)
@@ -2800,16 +2820,9 @@ with tab6:
                 st.rerun()
             up = st.file_uploader("Cargar movimientos de Cocos, o un historial guardado (CSV)", type="csv", key="cart_up")
             if up is not None and st.session_state.get("cart_up_name") != up.name:
-                # Ratio de cada CEDEAR a partir de los precios actuales: ratio ≈ Precio USD × CCL / Precio ARS
-                ratios_imp = {}
-                if CCL_REF:
-                    for _tk in tabla.index:
-                        if not tabla.loc[_tk, "Es AR"]:
-                            _pu, _pa = tabla.loc[_tk, "Precio USD"], tabla.loc[_tk, "Precio ARS"]
-                            if pd.notna(_pu) and pd.notna(_pa) and _pa > 0:
-                                ratios_imp[_tk] = _pu * CCL_REF / _pa
-                for _tk, _rat in RATIOS_CEDEAR.items():   # completar con los ratios cargados a mano
-                    ratios_imp.setdefault(_tk, float(_rat))
+                # Mismos ratios (enteros) que usa la pantalla, para que las cantidades importadas
+                # queden en acciones de NY y se muestren de vuelta como CEDEARs enteros sin desfasaje.
+                ratios_imp = dict(RATIOS_HOY)
                 try:
                     nuevo_df, msg = importar_csv_cartera(up, ratios_imp)
                     st.session_state.cart_ops = nuevo_df
@@ -2831,7 +2844,8 @@ with tab6:
                     "Operación": st.column_config.SelectboxColumn("Operación", options=["Depósito", "Retiro", "Compra", "Venta", "Cambio"],
                                                                   required=True, help="Cambio: vende 'Ticker' y compra 'Ticker destino' con lo obtenido."),
                     "Ticker": st.column_config.TextColumn("Ticker", help="Compras, ventas y cambios (el que se vende)."),
-                    "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.0, format="%.4f"),
+                    "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.0, format="%.2f",
+                                                              help="CEDEARs (enteros) para acciones; cuotapartes o valor nominal para fondos y bonos."),
                     "Monto": st.column_config.NumberColumn("Monto", min_value=0.0, help="Para depósitos y retiros."),
                     "Moneda": st.column_config.SelectboxColumn("Moneda del monto", options=["USD", "ARS"]),
                     "Ticker destino": st.column_config.TextColumn("Cambia por", help="Solo para 'Cambio': la acción que se compra."),
@@ -2856,12 +2870,18 @@ with tab6:
             except Exception:
                 mep = None
             close, pagos = datos_cartera(tickers, inicio, mep)
+            # Las cantidades están en CEDEARs, así que se valúa por el PRECIO DEL CEDEAR = precio en
+            # Nueva York ÷ ratio (bonos y fondos tienen ratio 1, no cambian).
+            for _t in list(close.columns):
+                _r = ratio_cedear(_t)
+                if _r and _r != 1:
+                    close[_t] = close[_t] / _r
             # Precio de HOY en la última fila: reutiliza el intradiario de 15 min del panel técnico
             # (demorado ~15 min, pero de hoy) para que la valuación no quede en el cierre de ayer.
             try:
                 for _t, (_p, _ts) in (px_intra or {}).items():
                     if _t in close.columns and np.isfinite(_p) and _p > 0:
-                        close.iloc[-1, close.columns.get_loc(_t)] = _p
+                        close.iloc[-1, close.columns.get_loc(_t)] = _p / ratio_cedear(_t)
             except Exception:
                 pass
             faltan = [t for t in tickers if t not in close.columns or close[t].dropna().empty]
@@ -2895,7 +2915,7 @@ with tab6:
         if tipo in ("Comprar", "Cambiar uno por otro"):
             H('<div class="eyebrow m" style="margin:8px 0 6px">¿Qué querés comprar?</div>')
             clase = st.segmented_control("Tipo de activo", CLASES, default=CLASES[0], key="cart_clase", label_visibility="collapsed") or CLASES[0]
-        UNIDAD = {CLASES[0]: "Cantidad de acciones", CLASES[1]: "Cantidad de cuotapartes", CLASES[2]: "Valor nominal (VN)"}
+        UNIDAD = {CLASES[0]: "Cantidad de CEDEARs", CLASES[1]: "Cantidad de cuotapartes", CLASES[2]: "Valor nominal (VN)"}
 
         def selector_activo(contenedor, clave):
             """Devuelve la clave interna del activo elegido (o None)."""
@@ -2930,17 +2950,18 @@ with tab6:
                 mon = g2.selectbox("Moneda", ["USD", "ARS"])
             elif tipo == "Comprar":
                 tk = selector_activo(g1, "cart_activo")
-                cant = g2.number_input(UNIDAD[clase], min_value=0.0, step=1.0)
-                st.caption("Se compra al precio de cierre del día. Si no tenés efectivo suficiente, primero depositá dinero.")
+                cant = g2.number_input(UNIDAD[clase], min_value=0.0, step=1.0, format="%d")
+                st.caption("Las cantidades son en **CEDEARs enteros** (lo que comprás en Argentina). Se compra al precio de cierre del día. "
+                           "Si no tenés efectivo suficiente, primero depositá dinero.")
             elif tipo == "Vender":
                 tk = g1.selectbox("Activo que vendés", tenidas or [None],
                                   format_func=lambda k: "(todavía no tenés activos)" if k is None else nombre_activo(k))
-                cant = g2.number_input("Cantidad (acciones, cuotapartes o VN)", min_value=0.0, step=1.0,
-                                       help=f"Tenés {ult_qty.get(tk, 0):,.4f}" if tk is not None else None)
+                cant = g2.number_input("Cantidad (CEDEARs, cuotapartes o VN)", min_value=0.0, step=1.0, format="%d",
+                                       help=f"Tenés {ult_qty.get(tk, 0):,.0f}" if tk is not None else None)
             else:
                 tk = g1.selectbox("Vendo", tenidas or [None],
                                   format_func=lambda k: "(todavía no tenés activos)" if k is None else nombre_activo(k))
-                cant = g2.number_input("Cantidad que vendo", min_value=0.0, step=1.0)
+                cant = g2.number_input("Cantidad que vendo (CEDEARs)", min_value=0.0, step=1.0, format="%d")
                 tk2 = selector_activo(st, "cart_activo_destino")
                 st.caption("La compra se hace con lo que se obtiene de la venta, a los precios de cierre del día. "
                            "Después de agregarlo, la tenencia actual ya aparece cambiada.")
@@ -2954,6 +2975,7 @@ with tab6:
                     falta = "Ingresá un monto mayor a 0."
             elif tipo == "Comprar":
                 if tk and cant > 0:
+                    # La cantidad se guarda en CEDEARs (enteros); la app valúa por precio del CEDEAR.
                     fila = {**base, "Operación": "Compra", "Ticker": tk, "Cantidad": cant}
                 else:
                     falta = "Elegí el activo e ingresá una cantidad mayor a 0."
@@ -2968,7 +2990,8 @@ with tab6:
                 else:
                     falta = "Elegí el activo que vendés, la cantidad y el activo que comprás."
             if tipo in ("Vender", "Cambiar uno por otro") and fila and cant > ult_qty.get(tk, 0) + 1e-9:
-                st.warning(f"Estás vendiendo más de lo que tenés hoy de {nombre_activo(tk)} ({ult_qty.get(tk, 0):,.4f}). Se agrega igual; revisá la fecha.")
+                st.warning(f"Estás vendiendo más de lo que tenés hoy de {nombre_activo(tk)} "
+                           f"({ult_qty.get(tk, 0):,.0f}). Se agrega igual; revisá la fecha.")
             if falta:
                 st.error(falta)
             elif fila:
@@ -2999,11 +3022,15 @@ with tab6:
                 st.warning("Hay ventas por más acciones de las que tenías.")
 
             # --- Tenencia actual ---
+            # Las cantidades ya están en CEDEARs (enteros) y el precio es el del CEDEAR en USD.
             px_ult = close.reindex(res.index).iloc[-1]
             ten = pd.DataFrame({"Cantidad": ult_qty, "Precio USD": px_ult[ult_qty.index], "Valor USD": ult_qty * px_ult[ult_qty.index]})
             ten = ten[ten["Cantidad"].abs() > 1e-9]
             ten.loc["Efectivo (USD)"] = [np.nan, np.nan, res["efectivo_usd"].iloc[-1]]
-            ten["% de la cartera"] = ten["Valor USD"] / ten["Valor USD"].sum() * 100
+            # % sobre el total de posiciones con valor positivo: si el efectivo quedó negativo
+            # (compraste más de lo depositado), no infla los porcentajes por encima de 100%.
+            _den = ten["Valor USD"].clip(lower=0).sum()
+            ten["% de la cartera"] = (ten["Valor USD"] / _den * 100) if _den else np.nan
             ten.index = [nombre_activo(i) for i in ten.index]
             ten.index.name = "Activo"
             items = [(i, float(p)) for i, p in ten["% de la cartera"].items() if p > 0.05]
@@ -3029,6 +3056,7 @@ with tab6:
                     ("Valor hoy", E.num(val_u, 1, "US$ "), f"≈ $ {E.num(val_u * mep_now, 0)}" if MEP_HOY else "", False),
                     ("Rendimiento US$", E.num(rend_u, 1, "US$ ", signo=True), f"≈ $ {E.num(rend_u * mep_now, 0)}" if MEP_HOY else "", True),
                     ("Rendimiento %", E.num(pct_u, 2, suf="%", signo=True), "Sobre lo invertido", False)]))
+                # Cantidad en CEDEARs y precios por CEDEAR (ya vienen así de la valuación).
                 disp = pd.DataFrame(index=pos.index)
                 disp["Cantidad"] = pos["Cantidad"]
                 disp["Compra US$"] = pos["P. compra USD"]
@@ -3045,7 +3073,7 @@ with tab6:
                     disp,
                     width="stretch",
                     column_config={
-                        "Cantidad": st.column_config.NumberColumn(format="%.2f"),
+                        "Cantidad": st.column_config.NumberColumn(format="%.0f", help="Cantidad de CEDEARs (acciones argentinas). Para fondos y bonos, cuotapartes o valor nominal."),
                         "Compra US$": st.column_config.NumberColumn(format="US$ %.2f", help="Precio de compra promedio (costo promedio ponderado)."),
                         "Hoy US$": st.column_config.NumberColumn(format="US$ %.2f", help="Precio actual (hoy, demorado ~15 min)."),
                         "Rend. US$": st.column_config.NumberColumn(format="US$ %+.1f"),
