@@ -2519,6 +2519,54 @@ with tab5:
 COLS_OPS = ["Fecha", "Operación", "Ticker", "Cantidad", "Monto", "Moneda", "Ticker destino"]
 
 
+def importar_csv_cartera(archivo):
+    """Lee un CSV de movimientos (formato propio de la app) o una foto de tenencia de Cocos.
+    Devuelve (DataFrame con COLS_OPS, mensaje o None). Lanza ValueError si no entiende el formato."""
+    import io
+    texto = archivo.getvalue().decode("utf-8-sig", errors="replace")
+    primera = next((l for l in texto.splitlines() if l.strip()), "")
+    sep = ";" if primera.count(";") > primera.count(",") else ","
+    df = pd.read_csv(io.StringIO(texto), sep=sep, decimal="," if sep == ";" else ".")
+    cols = {str(c).strip().lower(): c for c in df.columns}
+
+    # Formato propio: historial de movimientos (tiene Fecha y Operación)
+    if ("fecha" in cols and ("operación" in cols or "operacion" in cols)):
+        d = df.rename(columns={c: str(c).strip() for c in df.columns})
+        d = d.rename(columns={"Operacion": "Operación"})
+        d["Fecha"] = pd.to_datetime(d["Fecha"]).dt.date
+        return d.reindex(columns=COLS_OPS), None
+
+    # Formato Cocos: foto de tenencia (instrumento; cantidad; precio; precioAsOf; moneda; total; ...)
+    if "instrumento" in cols and ("total" in cols or "cantidad" in cols):
+        efectivo = {"ARS", "USD", "EXT"}
+        fecha_rep = date.today()
+        if "precioasof" in cols:
+            fechas = pd.to_datetime(df[cols["precioasof"]], errors="coerce").dropna()
+            if len(fechas):
+                fecha_rep = fechas.max().date()
+        por_moneda = {}
+        for _, r in df.iterrows():
+            inst = str(r[cols["instrumento"]]).strip()
+            if inst.upper() in efectivo:
+                cur, val = inst.upper(), pd.to_numeric(r.get(cols.get("cantidad")), errors="coerce")
+            else:
+                cur = str(r.get(cols.get("moneda"), "")).strip().upper()
+                val = pd.to_numeric(r.get(cols.get("total")), errors="coerce")
+            if cur in ("ARS", "USD") and pd.notna(val) and val > 0:
+                por_moneda[cur] = por_moneda.get(cur, 0.0) + float(val)
+        if not por_moneda:
+            raise ValueError("no encontré tenencia válida")
+        movs = [[fecha_rep, "Depósito", "", None, round(v, 2), cur, ""] for cur, v in por_moneda.items()]
+        msg = ("Detecté una **foto de tenencia de Cocos** (no un historial de movimientos). La cargué como un "
+               f"depósito inicial por moneda al {fecha_rep:%d/%m/%Y}, así ves tu saldo de partida. "
+               "**No tiene rendimiento histórico** (no hay compras/ventas con fechas) y el FCI de Cocos se sumó por su "
+               "valor en pesos, porque la app no puede cotizarlo. Para ver rendimiento real, exportá de Cocos el "
+               "historial de **movimientos** (con fechas y operaciones).")
+        return pd.DataFrame(movs, columns=COLS_OPS), msg
+
+    raise ValueError("formato no reconocido")
+
+
 def preparar_ops(ed):
     ops = ed.copy()
     for c in COLS_OPS:
@@ -2574,17 +2622,22 @@ with tab6:
                 st.session_state.cart_ver += 1
                 st.session_state.pop("cart_up_name", None)
                 st.rerun()
-            up = st.file_uploader("Cargar un historial guardado (CSV)", type="csv", key="cart_up")
+            up = st.file_uploader("Cargar un historial guardado (CSV) o una tenencia de Cocos", type="csv", key="cart_up")
             if up is not None and st.session_state.get("cart_up_name") != up.name:
                 try:
-                    nuevo_df = pd.read_csv(up)
-                    nuevo_df["Fecha"] = pd.to_datetime(nuevo_df["Fecha"]).dt.date
-                    st.session_state.cart_ops = nuevo_df.reindex(columns=COLS_OPS)
+                    nuevo_df, msg = importar_csv_cartera(up)
+                    st.session_state.cart_ops = nuevo_df
                     st.session_state.cart_up_name = up.name
                     st.session_state.cart_ver += 1
+                    if msg:
+                        st.session_state.cart_import_msg = msg
                     st.rerun()
                 except Exception:
-                    st.warning("No se pudo leer el CSV. Tiene que tener las columnas: " + ", ".join(COLS_OPS) + ".")
+                    st.warning("No se pudo leer el CSV. Para el **historial** tiene que tener las columnas: "
+                               + ", ".join(COLS_OPS) + ". También acepto la **foto de tenencia de Cocos** "
+                               "(el archivo portfolio_report).")
+            if st.session_state.get("cart_import_msg"):
+                st.info(st.session_state.pop("cart_import_msg"))
             ed = st.data_editor(
                 st.session_state.cart_ops, num_rows="dynamic", width="stretch", key=f"cart_ed_{st.session_state.cart_ver}",
                 column_config={
