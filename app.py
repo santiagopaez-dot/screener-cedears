@@ -1317,7 +1317,11 @@ def historial_html(ed):
         elif op == "Cambio":
             det, tipo = f"{qf(o['Cantidad'])} {E.esc(nombre_activo(txt(o['Ticker'])))} → {E.esc(nombre_activo(txt(o['Ticker destino'])))}", "sand"
         else:
-            det, tipo = f"{qf(o['Cantidad'])} {E.esc(nombre_activo(txt(o['Ticker'])))}", "sand"
+            det = f"{qf(o['Cantidad'])} {E.esc(nombre_activo(txt(o['Ticker'])))}"
+            pr = pd.to_numeric(o.get("Monto"), errors="coerce")   # precio cargado (opcional)
+            if pd.notna(pr) and pr > 0:
+                det += f' <span class="muted" style="font-size:11px">@ {E.num(pr, 2, "US$ " if o["Moneda"] == "USD" else "$ ")}</span>'
+            tipo = "sand"
         rows.append([E.esc(o["_f"].strftime("%d/%m/%Y")), E.chip(op, tipo), f'<span class="strong">{det}</span>'])
     pie = f'<div class="sub" style="font-size:.85rem;margin-top:8px">Mostrando los últimos {min(20, len(d))} de {len(d)} movimientos.</div>'
     return E.tabla([("Fecha", "l"), ("Operación", "l"), ("Detalle", "l")], rows) + pie
@@ -2753,8 +2757,15 @@ def importar_csv_cartera(archivo, ratios=None):
                 tk = (m.group(1) if m else inst).strip().upper()
                 if pd.isna(cant) or cant == 0:
                     continue
-                # Se guarda la cantidad de CEDEARs tal cual (entera): la app valúa por precio del CEDEAR.
-                movs.append([f, "Compra" if "compra" in tl else "Venta", tk, round(abs(cant)), None, "USD", ""])
+                # Cantidad de CEDEARs tal cual (entera). Precio real al que operaste (por CEDEAR): si Cocos
+                # trae la columna "precio" se usa esa; si no, se estima con total ÷ cantidad. Va en Monto/Moneda
+                # y la app lo usa para el costo exacto (sin estimar por la fecha).
+                precio = pd.to_numeric(r.get(cols.get("precio")), errors="coerce")
+                if (pd.isna(precio) or precio <= 0) and pd.notna(total) and total != 0:
+                    precio = abs(total) / abs(cant)
+                pmonto = round(float(precio), 4) if pd.notna(precio) and precio > 0 else None
+                movs.append([f, "Compra" if "compra" in tl else "Venta", tk, round(abs(cant)),
+                             pmonto, (mon if pmonto is not None else "USD"), ""])
             elif "recibo de cobro" in tl or "deposito" in tl or "depósito" in tl:
                 if pd.notna(total) and total > 0:
                     movs.append([f, "Depósito", "", None, round(abs(total), 2), mon, ""])
@@ -2891,7 +2902,8 @@ with tab6:
                     "Ticker": st.column_config.TextColumn("Ticker", help="Compras, ventas y cambios (el que se vende)."),
                     "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.0, format="%.2f",
                                                               help="CEDEARs (enteros) para acciones; cuotapartes o valor nominal para fondos y bonos."),
-                    "Monto": st.column_config.NumberColumn("Monto", min_value=0.0, help="Para depósitos y retiros."),
+                    "Monto": st.column_config.NumberColumn("Monto / Precio", min_value=0.0,
+                                                           help="Depósitos y retiros: monto total. Compras y ventas: precio por CEDEAR al que operaste (opcional; vacío = se estima por la fecha)."),
                     "Moneda": st.column_config.SelectboxColumn("Moneda del monto", options=["USD", "ARS"]),
                     "Ticker destino": st.column_config.TextColumn("Cambia por", help="Solo para 'Cambio': la acción que se compra."),
                 })
@@ -3021,6 +3033,18 @@ with tab6:
         tk = tk2 = None
         cant = monto = 0.0
         mon = "USD"
+        precio_op, mon_precio = None, "ARS"        # precio opcional al que operaste (por CEDEAR) y su moneda
+
+        def _input_precio(label):
+            """Fila opcional: precio por CEDEAR al que operaste + su moneda. Vacío = estimar por la fecha."""
+            pc1, pc2 = st.columns([3, 1.4])
+            p = pc1.number_input(label, min_value=0.0, value=None, key=f"cart_precio_{fv}",
+                                 placeholder="Dejalo vacío para estimar por la fecha",
+                                 help="Si sabés a qué precio operaste, cargalo (por CEDEAR) y el rendimiento sale exacto. "
+                                      "Si lo dejás vacío, uso el precio de mercado de esa fecha.")
+            m = pc2.selectbox("Moneda", ["ARS", "USD"], key=f"cart_monprecio_{fv}")
+            return p, m
+
         if tipo in ("Depositar dinero", "Retirar dinero"):
             monto = g1.number_input("Monto", min_value=0.0, step=100.0, key=f"cart_monto_{fv}")
             mon = g2.selectbox("Moneda", ["USD", "ARS"], key=f"cart_mondep_{fv}")
@@ -3028,14 +3052,16 @@ with tab6:
             tk = selector_activo(g1, f"cart_activo_{fv}")
             cant = g2.number_input(UNIDAD[clase], min_value=0.0, step=1.0, key=f"cart_cant_{fv}")
             mostrar_precio(tk, cant)
-            st.caption("Las cantidades son en **CEDEARs enteros** (lo que comprás en Argentina). Se compra al precio de hoy. "
-                       "Si no tenés efectivo suficiente, primero depositá dinero.")
+            precio_op, mon_precio = _input_precio("Precio al que compraste (opcional, por CEDEAR)")
+            st.caption("Las cantidades son en **CEDEARs enteros** (lo que comprás en Argentina). Si cargás el precio, uso ese "
+                       "(exacto); si lo dejás vacío, el de mercado de la fecha. Si no tenés efectivo suficiente, primero depositá dinero.")
         elif tipo == "Vender":
             tk = g1.selectbox("Activo que vendés", tenidas or [None],
                               format_func=lambda k: "(todavía no tenés activos)" if k is None else nombre_activo(k), key=f"cart_vend_{fv}")
             cant = g2.number_input("Cantidad (CEDEARs, cuotapartes o VN)", min_value=0.0, step=1.0, key=f"cart_cant_{fv}",
                                    help=f"Tenés {ult_qty.get(tk, 0):,.0f}" if tk is not None else None)
             mostrar_precio(tk, cant)
+            precio_op, mon_precio = _input_precio("Precio al que vendiste (opcional, por CEDEAR)")
         else:
             tk = g1.selectbox("Vendo", tenidas or [None],
                               format_func=lambda k: "(todavía no tenés activos)" if k is None else nombre_activo(k), key=f"cart_camb_{fv}")
@@ -3055,12 +3081,17 @@ with tab6:
             elif tipo == "Comprar":
                 if tk and cant > 0:
                     # La cantidad se guarda en CEDEARs (enteros); la app valúa por precio del CEDEAR.
+                    # Si cargaste el precio, va en Monto/Moneda y se usa en vez del precio de mercado.
                     fila = {**base, "Operación": "Compra", "Ticker": tk, "Cantidad": cant}
+                    if precio_op and precio_op > 0:
+                        fila["Monto"], fila["Moneda"] = precio_op, mon_precio
                 else:
                     falta = "Elegí el activo e ingresá una cantidad mayor a 0."
             elif tipo == "Vender":
                 if tk in tenidas and cant > 0:
                     fila = {**base, "Operación": "Venta", "Ticker": tk, "Cantidad": cant}
+                    if precio_op and precio_op > 0:
+                        fila["Monto"], fila["Moneda"] = precio_op, mon_precio
                 else:
                     falta = "Elegí un activo que tengas e ingresá una cantidad mayor a 0."
             else:
