@@ -2968,32 +2968,64 @@ with tab6:
             return t.strip().upper() or None
 
         fila, falta = None, None
-        with st.form("cart_form", clear_on_submit=True):
-            fch = st.date_input("Fecha", value=hoy, max_value=hoy, format="DD/MM/YYYY")
-            g1, g2 = st.columns(2)
-            tk = tk2 = None
-            cant = monto = 0.0
-            if tipo in ("Depositar dinero", "Retirar dinero"):
-                monto = g1.number_input("Monto", min_value=0.0, step=100.0)
-                mon = g2.selectbox("Moneda", ["USD", "ARS"])
-            elif tipo == "Comprar":
-                tk = selector_activo(g1, "cart_activo")
-                cant = g2.number_input(UNIDAD[clase], min_value=0.0, step=1.0)
-                st.caption("Las cantidades son en **CEDEARs enteros** (lo que comprás en Argentina). Se compra al precio de cierre del día. "
-                           "Si no tenés efectivo suficiente, primero depositá dinero.")
-            elif tipo == "Vender":
-                tk = g1.selectbox("Activo que vendés", tenidas or [None],
-                                  format_func=lambda k: "(todavía no tenés activos)" if k is None else nombre_activo(k))
-                cant = g2.number_input("Cantidad (CEDEARs, cuotapartes o VN)", min_value=0.0, step=1.0,
-                                       help=f"Tenés {ult_qty.get(tk, 0):,.0f}" if tk is not None else None)
-            else:
-                tk = g1.selectbox("Vendo", tenidas or [None],
-                                  format_func=lambda k: "(todavía no tenés activos)" if k is None else nombre_activo(k))
-                cant = g2.number_input("Cantidad que vendo (CEDEARs)", min_value=0.0, step=1.0)
-                tk2 = selector_activo(st, "cart_activo_destino")
-                st.caption("La compra se hace con lo que se obtiene de la venta, a los precios de cierre del día. "
-                           "Después de agregarlo, la tenencia actual ya aparece cambiada.")
-            enviar = st.form_submit_button("Agregar movimiento")
+        fv = st.session_state.get("cart_form_ver", 0)   # versión de los campos (para resetearlos al agregar)
+
+        def precio_cedear_preview(tk):
+            """(precio por CEDEAR en USD, precio por CEDEAR en ARS) para mostrar al operar. None si no hay."""
+            if not tk or "|" in str(tk):
+                return None
+            r = ratio_cedear(tk)
+            pu = pa = np.nan
+            if tk in tabla.index:
+                pu, pa = tabla.loc[tk, "Precio USD"], tabla.loc[tk, "Precio ARS"]
+            if pd.isna(pu):
+                pu = precios_hoy_ny((tk,)).get(tk, np.nan)
+            if pd.isna(pu):
+                return None
+            usd_c = pu / r
+            ars_c = pa if pd.notna(pa) else (usd_c * CCL_REF if CCL_REF else np.nan)
+            return usd_c, ars_c
+
+        def mostrar_precio(tk, cant):
+            info = precio_cedear_preview(tk)
+            if info is None:
+                return
+            usd_c, ars_c = info
+            unit = f'<b>{E.num(usd_c, 2, "US$ ")}</b>' + (f' · $ {E.num(ars_c, 0)}' if ars_c == ars_c else '') + ' por CEDEAR'
+            total = (f' &nbsp;·&nbsp; <span class="muted">Total {E.num(cant, 0)} u.:</span> <b>{E.num(usd_c * cant, 2, "US$ ")}</b>'
+                     + (f' · $ {E.num(ars_c * cant, 0)}' if ars_c == ars_c else '')) if cant else ''
+            H(f'<div class="panel" style="padding:9px 14px;margin:2px 0 8px"><span class="muted">Precio de hoy</span>&nbsp; '
+              f'{unit}{total} <span class="muted" style="font-size:11px">(demorado ~15 min)</span></div>')
+
+        fch = st.date_input("Fecha", value=hoy, max_value=hoy, format="DD/MM/YYYY", key=f"cart_fch_{fv}")
+        g1, g2 = st.columns(2)
+        tk = tk2 = None
+        cant = monto = 0.0
+        mon = "USD"
+        if tipo in ("Depositar dinero", "Retirar dinero"):
+            monto = g1.number_input("Monto", min_value=0.0, step=100.0, key=f"cart_monto_{fv}")
+            mon = g2.selectbox("Moneda", ["USD", "ARS"], key=f"cart_mondep_{fv}")
+        elif tipo == "Comprar":
+            tk = selector_activo(g1, f"cart_activo_{fv}")
+            cant = g2.number_input(UNIDAD[clase], min_value=0.0, step=1.0, key=f"cart_cant_{fv}")
+            mostrar_precio(tk, cant)
+            st.caption("Las cantidades son en **CEDEARs enteros** (lo que comprás en Argentina). Se compra al precio de hoy. "
+                       "Si no tenés efectivo suficiente, primero depositá dinero.")
+        elif tipo == "Vender":
+            tk = g1.selectbox("Activo que vendés", tenidas or [None],
+                              format_func=lambda k: "(todavía no tenés activos)" if k is None else nombre_activo(k), key=f"cart_vend_{fv}")
+            cant = g2.number_input("Cantidad (CEDEARs, cuotapartes o VN)", min_value=0.0, step=1.0, key=f"cart_cant_{fv}",
+                                   help=f"Tenés {ult_qty.get(tk, 0):,.0f}" if tk is not None else None)
+            mostrar_precio(tk, cant)
+        else:
+            tk = g1.selectbox("Vendo", tenidas or [None],
+                              format_func=lambda k: "(todavía no tenés activos)" if k is None else nombre_activo(k), key=f"cart_camb_{fv}")
+            cant = g2.number_input("Cantidad que vendo (CEDEARs)", min_value=0.0, step=1.0, key=f"cart_cant_{fv}")
+            tk2 = selector_activo(st, f"cart_activo_destino_{fv}")
+            mostrar_precio(tk, cant)
+            st.caption("La compra se hace con lo que se obtiene de la venta, a los precios de hoy. "
+                       "Después de agregarlo, la tenencia actual ya aparece cambiada.")
+        enviar = st.button("Agregar movimiento", key=f"cart_enviar_{fv}", type="primary")
         if enviar:
             base = {"Fecha": fch, "Moneda": "USD"}
             if tipo in ("Depositar dinero", "Retirar dinero"):
@@ -3026,6 +3058,7 @@ with tab6:
                 nueva = pd.DataFrame([{c: fila.get(c) for c in COLS_OPS}])
                 st.session_state.cart_ops = pd.concat([ed, nueva], ignore_index=True)
                 st.session_state.cart_ver += 1
+                st.session_state.cart_form_ver = fv + 1   # resetea los campos del formulario
                 st.session_state.cart_msg = "Movimiento agregado. La tenencia actual ya lo incluye."
                 st.rerun()
 
