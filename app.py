@@ -1530,11 +1530,42 @@ for _n in (30, 50, 200):
 # --- 1. CEDEARs: trading ------------------------------------------------------
 with tab1:
     H('<div class="eyebrow m">Análisis técnico</div><div class="h2">RSI, medias móviles y pre-market</div>')
-    txt = f"Datos diarios al {close.index[-1].date()}"
-    txt += (f" · CEDEARs intradiario hasta {ult_intra:%d/%m %H:%M} (hora de Nueva York)" if ult_intra is not None
-            else " · RSI de 45 min de CEDEARs no disponible ahora")
+    estado_ny, ahora_ny = sesion_eeuu()
+    etiqueta_ses = {"pre": "🌅 Pre-market abierto", "regular": "🟢 Mercado abierto",
+                    "after": "🌙 After-hours", "cerrado": "⏸️ Mercado cerrado"}[estado_ny]
+    tabla["Pre %"] = np.nan
+    tabla["Pre precio"] = np.nan
+    tabla["RSI prov"] = np.nan
+    precios_en_vivo = False
+    # Con el mercado ABIERTO, el "cierre diario" todavía es el de ayer. Usamos el precio en vivo de hoy
+    # para el precio mostrado y la variación del día (solo CEDEARs; las acciones argentinas van por BYMA).
+    if estado_ny == "regular":
+        try:
+            cedear_vivo = tuple(sorted(tabla.index[(~tabla["Es AR"]) & tabla["Liquida"]]))
+            ext_vivo = precios_extended(cedear_vivo)
+            hoy_ny = ahora_ny.date()
+            for tk, (p, ts) in ext_vivo.items():
+                if tk in tabla.index and tk in close.columns:
+                    s = close[tk].dropna()
+                    if len(s) >= 2:
+                        base = s.iloc[-2] if s.index[-1].date() == hoy_ny else s.iloc[-1]
+                        tabla.loc[tk, "Precio USD"] = p
+                        tabla.loc[tk, "Var. diaria %"] = (p / base - 1) * 100
+                        precios_en_vivo = True
+            if precios_en_vivo and CCL_REF:
+                tabla["CCL implícito"] = tabla["Precio ARS"] * tabla["Ratio"] / tabla["Precio USD"]
+                tabla["Desvío CCL %"] = (tabla["CCL implícito"] / CCL_REF - 1) * 100
+        except Exception:
+            pass
+
+    if precios_en_vivo:
+        txt = f"🟢 Precios de CEDEARs **en vivo** ({ahora_ny:%H:%M} hora de Nueva York). Acciones argentinas y datos diarios al {close.index[-1].date()}"
+    else:
+        txt = f"Datos diarios al {close.index[-1].date()}"
+    txt += (f" · intradiario hasta {ult_intra:%d/%m %H:%M} (NY)" if ult_intra is not None
+            else " · RSI de 45 min no disponible ahora")
     if ult_intra_ar is not None:
-        txt += f" · acciones argentinas hasta {ult_intra_ar:%d/%m %H:%M} (hora de Argentina)"
+        txt += f" · acciones argentinas hasta {ult_intra_ar:%d/%m %H:%M} (Argentina)"
     st.caption(txt)
 
     lo, hi = RSI_BAJO, RSI_ALTO
@@ -1548,13 +1579,6 @@ with tab1:
                              help="Mostrá solo las que cotizan por encima (tendencia alcista) o por debajo (bajista) "
                                   "de su promedio de 30, 50 o 200 ruedas.")
 
-    # --- Pre-market / after-hours (solo CEDEARs: usan el precio de la acción en Nueva York) ---
-    estado_ny, ahora_ny = sesion_eeuu()
-    etiqueta_ses = {"pre": "🌅 Pre-market abierto", "regular": "🟢 Mercado abierto",
-                    "after": "🌙 After-hours", "cerrado": "⏸️ Mercado cerrado"}[estado_ny]
-    tabla["Pre %"] = np.nan
-    tabla["Pre precio"] = np.nan
-    tabla["RSI prov"] = np.nan
     ver_pre = st.toggle(f"Ver pre-market / after-hours de EE.UU.  ·  {etiqueta_ses} ({ahora_ny:%H:%M} NY)",
                         value=False, key="ver_pre",
                         help="Muestra cómo se mueve la acción en Nueva York fuera del horario regular (pre-market y after-hours) "
