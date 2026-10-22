@@ -2543,14 +2543,17 @@ with tab5:
 COLS_OPS = ["Fecha", "Operación", "Ticker", "Cantidad", "Monto", "Moneda", "Ticker destino"]
 
 
-def importar_csv_cartera(archivo):
-    """Lee un CSV de movimientos (formato propio de la app) o una foto de tenencia de Cocos.
-    Devuelve (DataFrame con COLS_OPS, mensaje o None). Lanza ValueError si no entiende el formato."""
-    import io
+def importar_csv_cartera(archivo, ratios=None):
+    """Lee un CSV de movimientos (formato propio de la app o de Cocos) o una foto de tenencia de Cocos.
+    ratios: dict ticker -> ratio de conversión del CEDEAR (CEDEARs por acción), para pasar las cantidades
+    de CEDEARs a equivalente en acciones de Nueva York. Devuelve (DataFrame COLS_OPS, mensaje o None)."""
+    import io, re
+    ratios = ratios or {}
     texto = archivo.getvalue().decode("utf-8-sig", errors="replace")
     primera = next((l for l in texto.splitlines() if l.strip()), "")
     sep = ";" if primera.count(";") > primera.count(",") else ","
-    df = pd.read_csv(io.StringIO(texto), sep=sep, decimal="," if sep == ";" else ".")
+    kw = dict(decimal=",", thousands=".") if sep == ";" else {}
+    df = pd.read_csv(io.StringIO(texto), sep=sep, **kw)
     cols = {str(c).strip().lower(): c for c in df.columns}
 
     # Formato propio: historial de movimientos (tiene Fecha y Operación)
@@ -2559,6 +2562,55 @@ def importar_csv_cartera(archivo):
         d = d.rename(columns={"Operacion": "Operación"})
         d["Fecha"] = pd.to_datetime(d["Fecha"]).dt.date
         return d.reindex(columns=COLS_OPS), None
+
+    # Formato Cocos: historial de MOVIMIENTOS (tiene tipoOperacion y fechaEjecucion)
+    if "tipooperacion" in cols and "fechaejecucion" in cols:
+        movs, sin_ratio = [], set()
+        for _, r in df.iterrows():
+            tipo = str(r.get(cols["tipooperacion"], "")).strip()
+            tl = tipo.lower()
+            inst = str(r.get(cols.get("instrumento"), "")).strip()
+            mon = str(r.get(cols.get("moneda"), "")).strip().upper() or "ARS"
+            fecha = pd.to_datetime(r.get(cols["fechaejecucion"]), dayfirst=True, errors="coerce")
+            total = pd.to_numeric(r.get(cols.get("total")), errors="coerce")
+            cant = pd.to_numeric(r.get(cols.get("cantidad")), errors="coerce")
+            if pd.isna(fecha):
+                continue
+            f = fecha.date()
+            if "compra" in tl or "venta" in tl:
+                m = re.search(r"\(([^)]+)\)\s*$", inst)
+                tk = (m.group(1) if m else inst).strip().upper()
+                if pd.isna(cant) or cant == 0:
+                    continue
+                ratio = ratios.get(tk)
+                qn = abs(cant) / ratio if ratio and ratio > 0 else abs(cant)
+                if not ratio:
+                    sin_ratio.add(tk)
+                movs.append([f, "Compra" if "compra" in tl else "Venta", tk, round(qn, 6), None, "USD", ""])
+            elif "recibo de cobro" in tl or "deposito" in tl or "depósito" in tl:
+                if pd.notna(total) and total > 0:
+                    movs.append([f, "Depósito", "", None, round(abs(total), 2), mon, ""])
+            elif "suscripcion fci" in tl or "suscripción fci" in tl:
+                if pd.notna(total):
+                    movs.append([f, "Retiro", "", None, round(abs(total), 2), mon, ""])
+            elif "rescate fci" in tl:
+                if pd.notna(total):
+                    movs.append([f, "Depósito", "", None, round(abs(total), 2), mon, ""])
+            elif "extrac" in tl or "retiro" in tl:
+                if pd.notna(total):
+                    movs.append([f, "Retiro", "", None, round(abs(total), 2), mon, ""])
+            elif pd.notna(total) and abs(total) > 0:   # dividendos, rentas, etc.
+                movs.append([f, "Depósito" if total > 0 else "Retiro", "", None, round(abs(total), 2), mon, ""])
+        if not movs:
+            raise ValueError("no encontré movimientos válidos")
+        nota_sr = (" No tengo el ratio de " + ", ".join(sorted(sin_ratio)) + " (se cargaron sin convertir; "
+                   "corregí la cantidad a mano si hace falta).") if sin_ratio else ""
+        msg = ("Importé tus **movimientos de Cocos**. Las compras/ventas de CEDEARs se pasaron a su equivalente en "
+               "acciones de Nueva York (por el ratio de cada CEDEAR), así la app las valúa bien. Las suscripciones y "
+               "rescates del FCI (Cocos Pesos Plus) se tratan como **entradas/salidas de efectivo**, porque ese fondo "
+               "money-market funciona como tu caja. Puede quedar alguna diferencia chica contra lo que ves en Cocos "
+               "(ratios, comisiones y spread del CEDEAR)." + nota_sr)
+        return pd.DataFrame(movs, columns=COLS_OPS), msg
 
     # Formato Cocos: foto de tenencia (instrumento; cantidad; precio; precioAsOf; moneda; total; ...)
     if "instrumento" in cols and ("total" in cols or "cantidad" in cols):
@@ -2646,10 +2698,20 @@ with tab6:
                 st.session_state.cart_ver += 1
                 st.session_state.pop("cart_up_name", None)
                 st.rerun()
-            up = st.file_uploader("Cargar un historial guardado (CSV) o una tenencia de Cocos", type="csv", key="cart_up")
+            up = st.file_uploader("Cargar movimientos de Cocos, o un historial guardado (CSV)", type="csv", key="cart_up")
             if up is not None and st.session_state.get("cart_up_name") != up.name:
+                # Ratio de cada CEDEAR a partir de los precios actuales: ratio ≈ Precio USD × CCL / Precio ARS
+                ratios_imp = {}
+                if CCL_REF:
+                    for _tk in tabla.index:
+                        if not tabla.loc[_tk, "Es AR"]:
+                            _pu, _pa = tabla.loc[_tk, "Precio USD"], tabla.loc[_tk, "Precio ARS"]
+                            if pd.notna(_pu) and pd.notna(_pa) and _pa > 0:
+                                ratios_imp[_tk] = _pu * CCL_REF / _pa
+                for _tk, _rat in RATIOS_CEDEAR.items():   # completar con los ratios cargados a mano
+                    ratios_imp.setdefault(_tk, float(_rat))
                 try:
-                    nuevo_df, msg = importar_csv_cartera(up)
+                    nuevo_df, msg = importar_csv_cartera(up, ratios_imp)
                     st.session_state.cart_ops = nuevo_df
                     st.session_state.cart_up_name = up.name
                     st.session_state.cart_ver += 1
