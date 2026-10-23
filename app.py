@@ -341,14 +341,21 @@ def color_yield(v):
 # ----------------------------------------------------------------------------
 # Datos (con caché para no saturar las fuentes)
 # ----------------------------------------------------------------------------
+def hoy_token():
+    """Cadena que cambia al cambiar el día (hora de Nueva York). Se usa como parte de la clave de caché
+    de los precios: así, aunque el caché en disco siga vivo tras el 'sueño' de la app en la nube, cada
+    jornada fuerza una descarga nueva y los precios no quedan pegados a una fecha vieja."""
+    return datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+
+
 @st.cache_data(persist="disk", ttl=3600, show_spinner="Descargando precios de Nueva York...")
-def precios(tickers):
+def precios(tickers, dia=None):
     d = yf.download(list(tickers), period="1y", auto_adjust=True, progress=False)
     return d["Close"].ffill(), d["Volume"]
 
 
 @st.cache_data(persist="disk", ttl=1800, show_spinner="Descargando precios de CEDEARs en BYMA...")
-def precios_cedear_ars(tickers):
+def precios_cedear_ars(tickers, dia=None):
     """Obtiene precio en ARS y volumen del CEDEAR en Buenos Aires (.BA)."""
     ba = [t + ".BA" for t in tickers]
     try:
@@ -370,7 +377,7 @@ def precios_cedear_ars(tickers):
 
 
 @st.cache_data(persist="disk", ttl=3600, show_spinner="Descargando acciones argentinas...")
-def precios_ar(tickers):
+def precios_ar(tickers, dia=None):
     """Precio y volumen diarios (1 año) de acciones que cotizan solo en BYMA, en pesos."""
     ba = [t + ".BA" for t in tickers]
     try:
@@ -421,7 +428,7 @@ def precios_extended(tickers):
 
 
 @st.cache_data(persist="disk", ttl=180, show_spinner=False)
-def precios_hoy_ny(tickers):
+def precios_hoy_ny(tickers, dia=None):
     """Último precio intradiario de HOY (Nueva York, USD) por ticker, demorado ~15 min. Sirve para
     valuar la cartera al día aunque el ticker no esté en el panel técnico. dict ticker -> precio."""
     tickers = [t for t in (tickers or []) if isinstance(t, str) and "|" not in t]
@@ -474,7 +481,7 @@ def dividendos_12m(tickers):
 
 
 @st.cache_data(persist="disk", ttl=300, show_spinner="Descargando datos intradiarios...")
-def rsi_45m(tickers, sufijo="", tz="America/New_York", inicio_min=570):
+def rsi_45m(tickers, sufijo="", tz="America/New_York", inicio_min=570, dia=None):
     """RSI(14) sobre velas de 45 min, armadas agrupando de a 3 velas de 15 min por rueda.
     sufijo: se agrega a cada ticker al pedirle a Yahoo (".BA" para BYMA). tz/inicio_min: huso horario
     y minuto de apertura de la rueda (9:30 NY = 570; 11:00 ART = 660) para armar los bloques de 45 min."""
@@ -975,7 +982,7 @@ def rem_inflacion():
 # Simulador de cartera: valor diario, rendimiento ajustado por aportes (TWR) y TIR del dinero (XIRR)
 # ----------------------------------------------------------------------------
 @st.cache_data(persist="disk", ttl=3600, show_spinner="Descargando precios de la cartera...")
-def precios_cartera(tickers, inicio):
+def precios_cartera(tickers, inicio, dia=None):
     d = yf.download(list(tickers), start=inicio, auto_adjust=False, progress=False)["Close"]
     if isinstance(d, pd.Series):
         d = d.to_frame(tickers[0])
@@ -1049,7 +1056,7 @@ def datos_cartera(keys, inicio, mep):
     cols, pagos = {}, pd.DataFrame(0.0, index=idx, columns=list(keys))
     acciones = [k for k in keys if "|" not in k]
     if acciones:
-        c = precios_cartera(tuple(acciones), inicio)
+        c = precios_cartera(tuple(acciones), inicio, hoy_token())
         for t in acciones:
             if t in c.columns and not c[t].dropna().empty:
                 cols[t] = c[t].reindex(c.index.union(idx)).ffill().reindex(idx)
@@ -1559,7 +1566,7 @@ tab1, tab2, tab_rv, tab3, tab4, tab5, tab6 = st.tabs([
     "Análisis técnico", "Análisis fundamental", "Cartera acciones", "Fondos (FCI)", "Simulador de tasas", "Renta fija", "Mi cartera",
 ])
 
-close, vol = precios(tuple(TICKERS))
+close, vol = precios(tuple(TICKERS), hoy_token())
 close = close.dropna(axis=1, how="all")
 if close.empty:
     st.warning("No se pudieron obtener precios de Yahoo Finance en este momento. Recargá la página en unos minutos.")
@@ -1573,7 +1580,7 @@ except Exception:
     MEP_HOY = None
 
 # Precios de CEDEARs en BYMA (ARS + volumen local)
-cedear_ars, cedear_vol_local = precios_cedear_ars(tuple(close.columns))
+cedear_ars, cedear_vol_local = precios_cedear_ars(tuple(close.columns), hoy_token())
 
 tabla = pd.DataFrame({
     "Nombre": [INFO[t][0] for t in close.columns],
@@ -1589,7 +1596,7 @@ tabla.index.name = "Ticker"
 tabla["Var. diaria %"] = ((close.iloc[-1] / close.iloc[-2] - 1) * 100).values
 
 try:
-    r45, ult_intra, px_intra = rsi_45m(tuple(tabla.index))
+    r45, ult_intra, px_intra = rsi_45m(tuple(tabla.index), dia=hoy_token())
     tabla["RSI 45 min"] = r45.reindex(tabla.index)
 except Exception:
     ult_intra = None
@@ -1597,7 +1604,7 @@ except Exception:
     tabla["RSI 45 min"] = np.nan
 
 # Acciones argentinas (cotizan solo en pesos en BYMA, no tienen contraparte en Nueva York)
-close_ar, vol_ar = precios_ar(tuple(TICKERS_AR))
+close_ar, vol_ar = precios_ar(tuple(TICKERS_AR), hoy_token())
 close_ar = close_ar.dropna(axis=1, how="all")
 if not close_ar.empty and MEP_HOY:
     tabla_ar = pd.DataFrame({
@@ -1614,7 +1621,7 @@ if not close_ar.empty and MEP_HOY:
     tabla_ar["Var. diaria %"] = ((close_ar.iloc[-1] / close_ar.iloc[-2] - 1) * 100).values
     try:
         r45_ar, ult_intra_ar, px_intra_ar = rsi_45m(tuple(tabla_ar.index), sufijo=".BA",
-                                        tz="America/Argentina/Buenos_Aires", inicio_min=660)
+                                        tz="America/Argentina/Buenos_Aires", inicio_min=660, dia=hoy_token())
         tabla_ar["RSI 45 min"] = r45_ar.reindex(tabla_ar.index)
     except Exception:
         ult_intra_ar = None
@@ -1741,7 +1748,11 @@ with tab1:
         txt = f"Datos diarios al {close.index[-1].date()}"
     if ult_intra_ar is not None:
         txt += f" · acciones argentinas hasta {ult_intra_ar:%H:%M} (Argentina)"
-    st.caption(txt)
+    cap_col, btn_col = st.columns([5, 1], vertical_alignment="center")
+    cap_col.caption(txt)
+    if btn_col.button("🔄 Actualizar", key="refrescar_precios", help="Vuelve a bajar los precios ahora mismo (por si quedaron viejos)."):
+        st.cache_data.clear()
+        st.rerun()
 
     lo, hi = RSI_BAJO, RSI_ALTO
     busqueda, favs = controles_busqueda_fav(tabla, "trad")
@@ -2937,7 +2948,7 @@ with tab6:
             # (demorado ~15 min, pero de hoy) para que la valuación no quede en el cierre de ayer,
             # aunque el ticker no esté en el panel técnico. Se pasa a precio por CEDEAR (÷ ratio).
             try:
-                _live = precios_hoy_ny(tuple(sorted(t for t in close.columns if "|" not in str(t))))
+                _live = precios_hoy_ny(tuple(sorted(t for t in close.columns if "|" not in str(t))), hoy_token())
                 for _t, _p in _live.items():
                     if _t in close.columns and np.isfinite(_p) and _p > 0:
                         close.iloc[-1, close.columns.get_loc(_t)] = _p / ratio_cedear(_t)
@@ -3010,7 +3021,7 @@ with tab6:
             if tk in tabla.index:
                 pu, pa = tabla.loc[tk, "Precio USD"], tabla.loc[tk, "Precio ARS"]
             if pd.isna(pu):
-                pu = precios_hoy_ny((tk,)).get(tk, np.nan)
+                pu = precios_hoy_ny((tk,), hoy_token()).get(tk, np.nan)
             if pd.isna(pu):
                 return None
             usd_c = pu / r
