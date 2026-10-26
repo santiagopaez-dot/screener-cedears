@@ -376,6 +376,18 @@ def precios_cedear_ars(tickers, dia=None):
         return pd.Series(dtype=float), pd.Series(dtype=float)
 
 
+@st.cache_data(persist="disk", ttl=1800, show_spinner="Descargando índices bursátiles...")
+def precios_indices_bolsa(tickers, dia=None):
+    """Precios diarios (1 año) de los índices bursátiles (S&P 500, Nasdaq, Merval, etc.)."""
+    try:
+        d = yf.download(list(tickers), period="1y", auto_adjust=True, progress=False)["Close"]
+        if isinstance(d, pd.Series):
+            d = d.to_frame(list(tickers)[0])
+        return d.ffill()
+    except Exception:
+        return pd.DataFrame()
+
+
 @st.cache_data(persist="disk", ttl=3600, show_spinner="Descargando acciones argentinas...")
 def precios_ar(tickers, dia=None):
     """Precio y volumen diarios (1 año) de acciones que cotizan solo en BYMA, en pesos."""
@@ -1731,6 +1743,101 @@ if precios_en_vivo and CCL_REF:
     tabla["CCL implícito"] = tabla["Precio ARS"] * tabla["Ratio"] / tabla["Precio USD"]
     tabla["Desvío CCL %"] = (tabla["CCL implícito"] / CCL_REF - 1) * 100
 
+# --- Índices bursátiles -------------------------------------------------------
+# No cotizan como CEDEAR (no tienen precio en BYMA) ni tienen fundamentales de empresa (P/E, ROE),
+# así que no entran en la tabla de CEDEARs: se muestran aparte en técnico y en fundamental.
+INDICES = {
+    "^GSPC": "S&P 500 (EE.UU.)", "^IXIC": "Nasdaq Composite (EE.UU.)", "^NDX": "Nasdaq 100 (EE.UU.)",
+    "^DJI": "Dow Jones (EE.UU.)", "^RUT": "Russell 2000 (EE.UU.)", "^VIX": "VIX (miedo / volatilidad)",
+    "^MERV": "Merval (Argentina)", "^BVSP": "Bovespa (Brasil)", "^GDAXI": "DAX (Alemania)",
+    "^FTSE": "FTSE 100 (Reino Unido)", "^STOXX50E": "Euro Stoxx 50", "^N225": "Nikkei 225 (Japón)",
+}
+close_idx = precios_indices_bolsa(tuple(INDICES), hoy_token())
+if isinstance(close_idx, pd.DataFrame) and not close_idx.empty:
+    close_idx = close_idx.dropna(axis=1, how="all")
+idx_df = pd.DataFrame()
+if isinstance(close_idx, pd.DataFrame) and not close_idx.empty:
+    try:
+        r45_idx, _ult_idx, px_idx = rsi_45m(tuple(close_idx.columns), dia=hoy_token())
+    except Exception:
+        r45_idx, px_idx = pd.Series(dtype=float), {}
+    _hoy_idx = datetime.now(ZoneInfo("America/New_York")).date()
+    _filas_idx = {}
+    for t in close_idx.columns:
+        s = close_idx[t].dropna()
+        if len(s) < 2:
+            continue
+        nivel, base = float(s.iloc[-1]), float(s.iloc[-2])
+        if t in px_idx:                                   # nivel de hoy (intradiario, demorado ~15 min)
+            p, ts = px_idx[t]
+            if np.isfinite(p) and p > 0 and ts.date() == _hoy_idx:
+                base = float(s.iloc[-2]) if s.index[-1].date() == ts.date() else float(s.iloc[-1])
+                nivel = float(p)
+        d = {"Nombre": INDICES.get(t, t), "Nivel": nivel,
+             "Var. diaria %": (nivel / base - 1) * 100 if base else np.nan,
+             "RSI diario": float(rsi(s).iloc[-1]),
+             "RSI 45 min": float(r45_idx.get(t, np.nan)) if hasattr(r45_idx, "get") else np.nan}
+        for n in (30, 50, 200):
+            ma = s.rolling(n).mean().iloc[-1]
+            d[f"MA{n} %"] = (nivel / ma - 1) * 100 if pd.notna(ma) and ma else np.nan
+        mn, mx = float(s.min()), float(s.max())
+        d["Mín52"], d["Máx52"] = mn, mx
+        d["Pos52 %"] = (nivel - mn) / (mx - mn) * 100 if mx > mn else np.nan
+        _filas_idx[t] = d
+    if _filas_idx:
+        idx_df = pd.DataFrame(_filas_idx).T
+
+
+def _medias_idx(r):
+    """Chips de distancia a las medias móviles de 30/50/200 (verde por encima, rojo por debajo)."""
+    out = []
+    for n in (30, 50, 200):
+        d = r.get(f"MA{n} %", np.nan)
+        if pd.isna(d):
+            out.append(f'<div style="font-size:11.5px;line-height:1.5"><b style="color:#8A7A6C">{n}</b> <span class="muted">—</span></div>')
+            continue
+        cls = "up" if d >= 0 else "down"
+        signo = "+" if d > 0 else ""
+        out.append(f'<div style="font-size:11.5px;line-height:1.5"><b style="color:#8A7A6C">{n}</b> '
+                   f'<span class="chip ch-{cls}" style="font-size:11px;padding:1px 6px">{signo}{E.num(d, 1, suf="%")}</span></div>')
+    return "".join(out)
+
+
+def _barra_rango(pos):
+    if pd.isna(pos):
+        return '<span class="muted">—</span>'
+    w = max(2, min(100, pos))
+    return (f'<div style="display:flex;align-items:center;gap:8px;min-width:120px"><div style="flex:1;height:6px;background:#EFEAE1;'
+            f'border-radius:3px;position:relative"><i style="position:absolute;left:0;top:0;height:6px;width:{w:.0f}%;'
+            f'background:#6A4FA0;border-radius:3px"></i></div><b style="font-size:12px">{pos:.0f}%</b></div>')
+
+
+def seccion_indices_tecnico():
+    if idx_df.empty:
+        return
+    with st.expander(f"📊 Índices bursátiles · {len(idx_df)} índices (RSI y medias móviles)", expanded=False):
+        st.caption("Los principales índices del mundo. No cotizan como CEDEAR: se muestra el **nivel** del índice (puntos), "
+                   "no un precio en pesos o dólares. RSI y medias móviles se calculan igual que para las acciones.")
+        filas = [[E.activo(r["Nombre"], t, t.replace("^", "")[:3], var_pct=r["Var. diaria %"]),
+                  f'<span class="strong">{E.num(r["Nivel"], 2)}</span> <span class="muted" style="font-size:11px">pts</span>',
+                  _medias_idx(r), E.rsi_pill(r["RSI diario"], RSI_BAJO, RSI_ALTO), E.rsi_pill(r["RSI 45 min"], RSI_BAJO, RSI_ALTO)]
+                 for t, r in idx_df.iterrows()]
+        H(E.tabla([("Índice", "l"), ("Nivel", "l"), ("Medias móviles", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")], filas))
+
+
+def seccion_indices_fundamental():
+    if idx_df.empty:
+        return
+    with st.expander(f"📊 Índices bursátiles · {len(idx_df)} índices (dónde cotizan en su rango)", expanded=False):
+        st.caption("Un índice no tiene P/E ni dividendos como una empresa. Como referencia de valuación mostramos dónde está "
+                   "cada índice dentro de su rango de las últimas 52 semanas: 0% = mínimo del año, 100% = máximo.")
+        filas = [[E.activo(r["Nombre"], t, t.replace("^", "")[:3], var_pct=r["Var. diaria %"]),
+                  f'<span class="strong">{E.num(r["Nivel"], 2)}</span>',
+                  E.num(r["Mín52"], 2), E.num(r["Máx52"], 2), _barra_rango(r["Pos52 %"])]
+                 for t, r in idx_df.iterrows()]
+        H(E.tabla([("Índice", "l"), ("Nivel", "l"), ("Mínimo 52 sem.", "l"), ("Máximo 52 sem.", "l"), ("Posición en el rango", "l")], filas))
+
+
 # --- 1. CEDEARs: trading ------------------------------------------------------
 with tab1:
     H('<div class="eyebrow m">Análisis técnico</div><div class="h2">RSI, medias móviles y pre-market</div>')
@@ -1753,6 +1860,8 @@ with tab1:
     if btn_col.button("🔄 Actualizar", key="refrescar_precios", help="Vuelve a bajar los precios ahora mismo (por si quedaron viejos)."):
         st.cache_data.clear()
         st.rerun()
+
+    seccion_indices_tecnico()
 
     lo, hi = RSI_BAJO, RSI_ALTO
     busqueda, favs = controles_busqueda_fav(tabla, "trad")
@@ -1932,6 +2041,7 @@ with tab2:
     H('<div class="eyebrow m">Análisis fundamental</div><div class="h2">Dividendos y valuación</div>')
     busqueda_d, favs_d = controles_busqueda_fav(tabla, "div", gestionar=False)
     st.caption("Tus favoritas (★) se eligen en la pestaña «CEDEARs · Trading» y también aparecen primero acá.")
+    seccion_indices_fundamental()
     # Para no pedirle datos fundamentales a Yahoo de los 250+ tickers (lento), solo traemos los de
     # las que pasan el filtro de volumen más las favoritas. El resto no se muestra en esta pestaña.
     necesarios = sorted(set(tabla.index[tabla["Liquida"]]) | (favs_d & set(tabla.index)))
