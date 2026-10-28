@@ -271,6 +271,14 @@ def rsi(s, n=14):
     return 100 - 100 / (1 + up / dn)
 
 
+EMAS = (21, 30, 150, 200)        # medias móviles exponenciales que usa el análisis técnico
+
+
+def ema(s, n):
+    """Media móvil exponencial (EMA) de n ruedas."""
+    return s.ewm(span=n, adjust=False).mean()
+
+
 def tea(tna, m):
     """TEA a partir de una TNA (decimal) con m capitalizaciones por año."""
     return (1 + tna / m) ** m - 1
@@ -555,6 +563,46 @@ def fundamentales(tickers):
         filas.append(d)
     df = pd.DataFrame(filas).set_index("Ticker")
     return df.reindex(columns=["Sector", "P/E", "P/E futuro", "P/B", "ROE %", "Deuda/EBITDA"])
+
+
+# Principales empresas por sector, para el calendario de balances (earnings).
+EMPRESAS_BALANCE = {
+    "Tecnología": ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "ORCL", "CRM", "ADBE", "IBM"],
+    "Semiconductores": ["NVDA", "AMD", "AVGO", "TSM", "INTC", "QCOM", "MU", "TXN"],
+    "Bancos / Financiero": ["JPM", "BAC", "WFC", "GS", "MS", "C", "V", "MA"],
+    "Salud": ["LLY", "UNH", "JNJ", "PFE", "MRK", "ABBV", "AMGN"],
+    "Consumo": ["WMT", "COST", "KO", "PEP", "PG", "MCD", "NKE", "SBUX", "DIS"],
+    "Energía": ["XOM", "CVX", "SLB", "COP"],
+    "Autos / Industria": ["TSLA", "GM", "F", "BA", "CAT", "GE"],
+    "Comunicación / Media": ["NFLX", "T", "VZ", "CMCSA"],
+}
+
+
+@st.cache_data(persist="disk", ttl=12 * 3600, show_spinner="Buscando fechas de balances...")
+def calendario_balances(tickers, dia=None):
+    """Próxima fecha de presentación de balance (earnings) por ticker. dict ticker -> Timestamp.
+    Yahoo devuelve una ventana estimada; se toma la fecha más temprana de esa ventana."""
+    out = {}
+    for t in tickers:
+        try:
+            cal = yf.Ticker(t).calendar
+            fecha = None
+            if isinstance(cal, dict):
+                ed = cal.get("Earnings Date") or cal.get("Earnings date")
+                if ed is not None:
+                    lst = ed if isinstance(ed, (list, tuple)) else [ed]
+                    fs = [pd.Timestamp(x) for x in lst if x is not None]
+                    fecha = min(fs) if fs else None
+            elif isinstance(cal, pd.DataFrame) and not cal.empty:
+                if "Earnings Date" in cal.index:
+                    fecha = pd.Timestamp(cal.loc["Earnings Date"].iloc[0])
+                elif "Earnings Date" in cal.columns:
+                    fecha = pd.Timestamp(cal["Earnings Date"].iloc[0])
+            if fecha is not None and pd.notna(fecha):
+                out[t] = pd.Timestamp(fecha).normalize().tz_localize(None)
+        except Exception:
+            continue
+    return out
 
 
 def _preparar_componente():
@@ -1686,12 +1734,12 @@ def ratio_cedear(t):
     r = RATIOS_HOY.get(t, 1.0)
     return r if r and r > 0 else 1.0
 
-# Distancia del precio a sus medias móviles de 30, 50 y 200 ruedas (%). Positivo = precio por
-# encima de la media (tendencia alcista); negativo = por debajo. Sirve para ver tendencia.
-for _n in (30, 50, 200):
-    _partes = [(close.iloc[-1] / close.rolling(_n).mean().iloc[-1] - 1) * 100]
+# Distancia del precio a sus medias móviles EXPONENCIALES (EMA) de 21, 30, 150 y 200 ruedas (%).
+# Positivo = precio por encima de la media (tendencia alcista); negativo = por debajo.
+for _n in EMAS:
+    _partes = [(close.iloc[-1] / ema(close, _n).iloc[-1] - 1) * 100]
     if not close_ar.empty:
-        _partes.append((close_ar.iloc[-1] / close_ar.rolling(_n).mean().iloc[-1] - 1) * 100)
+        _partes.append((close_ar.iloc[-1] / ema(close_ar, _n).iloc[-1] - 1) * 100)
     tabla[f"MA{_n} %"] = pd.concat(_partes).reindex(tabla.index)
 
 # --- Precio de HOY (intradiario) ----------------------------------------------
@@ -1777,8 +1825,8 @@ if isinstance(close_idx, pd.DataFrame) and not close_idx.empty:
              "Var. diaria %": (nivel / base - 1) * 100 if base else np.nan,
              "RSI diario": float(rsi(s).iloc[-1]),
              "RSI 45 min": float(r45_idx.get(t, np.nan)) if hasattr(r45_idx, "get") else np.nan}
-        for n in (30, 50, 200):
-            ma = s.rolling(n).mean().iloc[-1]
+        for n in EMAS:
+            ma = ema(s, n).iloc[-1]
             d[f"MA{n} %"] = (nivel / ma - 1) * 100 if pd.notna(ma) and ma else np.nan
         mn, mx = float(s.min()), float(s.max())
         d["Mín52"], d["Máx52"] = mn, mx
@@ -1789,9 +1837,9 @@ if isinstance(close_idx, pd.DataFrame) and not close_idx.empty:
 
 
 def _medias_idx(r):
-    """Chips de distancia a las medias móviles de 30/50/200 (verde por encima, rojo por debajo)."""
+    """Chips de distancia a las EMA de 21/30/150/200 (verde por encima, rojo por debajo)."""
     out = []
-    for n in (30, 50, 200):
+    for n in EMAS:
         d = r.get(f"MA{n} %", np.nan)
         if pd.isna(d):
             out.append(f'<div style="font-size:11.5px;line-height:1.5"><b style="color:#8A7A6C">{n}</b> <span class="muted">—</span></div>')
@@ -1815,14 +1863,14 @@ def _barra_rango(pos):
 def seccion_indices_tecnico():
     if idx_df.empty:
         return
-    with st.expander(f"📊 Índices bursátiles · {len(idx_df)} índices (RSI y medias móviles)", expanded=False):
+    with st.expander(f"📊 Índices bursátiles · {len(idx_df)} índices (RSI y EMA)", expanded=False):
         st.caption("Los principales índices del mundo. No cotizan como CEDEAR: se muestra el **nivel** del índice (puntos), "
-                   "no un precio en pesos o dólares. RSI y medias móviles se calculan igual que para las acciones.")
+                   "no un precio en pesos o dólares. RSI y EMA (21/30/150/200) se calculan igual que para las acciones.")
         filas = [[E.activo(r["Nombre"], t, t.replace("^", "")[:3], var_pct=r["Var. diaria %"]),
                   f'<span class="strong">{E.num(r["Nivel"], 2)}</span> <span class="muted" style="font-size:11px">pts</span>',
                   _medias_idx(r), E.rsi_pill(r["RSI diario"], RSI_BAJO, RSI_ALTO), E.rsi_pill(r["RSI 45 min"], RSI_BAJO, RSI_ALTO)]
                  for t, r in idx_df.iterrows()]
-        H(E.tabla([("Índice", "l"), ("Nivel", "l"), ("Medias móviles", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")], filas))
+        H(E.tabla([("Índice", "l"), ("Nivel", "l"), ("EMA 21/30/150/200", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")], filas))
 
 
 def seccion_indices_fundamental():
@@ -1838,9 +1886,53 @@ def seccion_indices_fundamental():
         H(E.tabla([("Índice", "l"), ("Nivel", "l"), ("Mínimo 52 sem.", "l"), ("Máximo 52 sem.", "l"), ("Posición en el rango", "l")], filas))
 
 
+def seccion_calendario_balances():
+    """Calendario de próximos balances (earnings) de las principales empresas, agrupado por sector."""
+    with st.expander("📅 Calendario de balances · cuándo presentan resultados por sector", expanded=False):
+        st.caption("Fecha estimada en que las principales empresas de cada sector presentan su balance trimestral (earnings). "
+                   "Las fechas las estima Yahoo y pueden cambiar; confirmá en tu broker.")
+        cargar = st.session_state.get("bal_cargar") or st.button(
+            "Cargar / actualizar fechas", key="bal_btn",
+            help="Trae las fechas de Yahoo. La primera vez tarda unos segundos; después quedan guardadas.")
+        if not cargar:
+            return
+        st.session_state.bal_cargar = True
+        todos = tuple(sorted({t for lst in EMPRESAS_BALANCE.values() for t in lst}))
+        fechas = calendario_balances(todos, hoy_token())
+        if not fechas:
+            st.info("No pude traer las fechas de balances ahora (Yahoo pudo limitar las consultas). Probá de nuevo en un minuto.")
+            return
+        hoy_d = pd.Timestamp.today().normalize()
+        nombre_bal = lambda t: INFO[t][0] if t in INFO else (INFO_AR[t][0] if t in INFO_AR else t)
+        hubo = False
+        for sector, lst in EMPRESAS_BALANCE.items():
+            # próximos balances (incluye los de los últimos 3 días como "recién presentado")
+            items = sorted(((t, fechas[t]) for t in lst if t in fechas and fechas[t] >= hoy_d - pd.Timedelta(days=3)),
+                           key=lambda x: x[1])
+            if not items:
+                continue
+            hubo = True
+            filas = []
+            for t, f in items:
+                dias = (f - hoy_d).days
+                if dias < 0:
+                    cuando, tipo = f"presentó hace {-dias} d", "flat"
+                elif dias == 0:
+                    cuando, tipo = "hoy", "up"
+                elif dias <= 7:
+                    cuando, tipo = f"en {dias} días", "up"
+                else:
+                    cuando, tipo = f"en {dias} días", "flat"
+                filas.append([E.activo(nombre_bal(t), t, t[:2]), E.esc(f.strftime("%d/%m/%Y")), E.chip(cuando, tipo)])
+            H(f'<div class="eyebrow m" style="margin-top:12px">{E.esc(sector)}</div>'
+              + E.tabla([("Empresa", "l"), ("Fecha del balance", "l"), ("Cuándo", "l")], filas))
+        if not hubo:
+            st.info("No hay balances próximos en la lista para los próximos días.")
+
+
 # --- 1. CEDEARs: trading ------------------------------------------------------
 with tab1:
-    H('<div class="eyebrow m">Análisis técnico</div><div class="h2">RSI, medias móviles y pre-market</div>')
+    H('<div class="eyebrow m">Análisis técnico</div><div class="h2">RSI, EMA y pre-market</div>')
     estado_ny, ahora_ny = sesion_eeuu()
     etiqueta_ses = {"pre": "🌅 Pre-market abierto", "regular": "🟢 Mercado abierto",
                     "after": "🌙 After-hours", "cerrado": "⏸️ Mercado cerrado"}[estado_ny]
@@ -1868,11 +1960,10 @@ with tab1:
     c1, c2 = st.columns([2, 3], vertical_alignment="bottom")
     vol_min = c1.slider("Volatilidad mínima % (descarta las que casi no se mueven)", 0, 100, 30, step=5)
     filtro = c2.segmented_control("Mostrar", ["Todas", "Sobreventa", "Sobrecompra"], default="Todas", key="rsi_filtro") or "Todas"
-    OPC_MA = ["Todas", "Por encima de MA30", "Por debajo de MA30", "Por encima de MA50",
-              "Por debajo de MA50", "Por encima de MA200", "Por debajo de MA200"]
-    filtro_ma = st.selectbox("Filtrar por media móvil", OPC_MA, index=0, key="ma_filtro",
+    OPC_MA = ["Todas"] + [f"{lado} de EMA{n}" for n in EMAS for lado in ("Por encima", "Por debajo")]
+    filtro_ma = st.selectbox("Filtrar por media exponencial (EMA)", OPC_MA, index=0, key="ma_filtro",
                              help="Mostrá solo las que cotizan por encima (tendencia alcista) o por debajo (bajista) "
-                                  "de su promedio de 30, 50 o 200 ruedas.")
+                                  "de su EMA de 21, 30, 150 o 200 ruedas.")
 
     ver_pre = st.toggle(f"Ver pre-market / after-hours de EE.UU.  ·  {etiqueta_ses} ({ahora_ny:%H:%M} NY)",
                         value=False, key="ver_pre",
@@ -1937,7 +2028,7 @@ with tab1:
     def _aplicar_filtro_ma(df):
         if filtro_ma == "Todas":
             return df
-        n = 30 if "MA30" in filtro_ma else (50 if "MA50" in filtro_ma else 200)
+        n = next((k for k in EMAS if f"EMA{k}" in filtro_ma), EMAS[-1])
         col = f"MA{n} %"
         if "encima" in filtro_ma:
             return df[df[col] > 0]
@@ -1989,10 +2080,10 @@ with tab1:
         return E.num(v, 0)
 
     def _medias_cel(r):
-        # Tres líneas apiladas: media (30/50/200) y % del precio respecto a ella.
+        # Líneas apiladas: EMA (21/30/150/200) y % del precio respecto a ella.
         # Verde si el precio está por encima de la media; rojo si está por debajo.
         lineas = []
-        for n in (30, 50, 200):
+        for n in EMAS:
             d = r.get(f"MA{n} %", np.nan)
             if pd.isna(d):
                 lineas.append(f'<div style="font-size:11.5px;line-height:1.5"><b style="color:#8A7A6C">{n}</b> '
@@ -2005,7 +2096,7 @@ with tab1:
         return "".join(lineas)
 
     COLS_TRAD = [("Activo", "l"), ("Precio", "l"), ("Vol. BYMA", "l"), ("Volatilidad", "l"),
-                 ("Medias móviles", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")]
+                 ("EMA 21/30/150/200", "l"), ("RSI diario", "l"), ("RSI 45 min", "l")]
 
     def _grupo_trad(titulo, sub, abierto):
         with st.expander(f"{titulo} · {len(sub)} activo" + ("s" if len(sub)!=1 else ""), expanded=abierto):
@@ -2029,7 +2120,8 @@ with tab1:
         sub = cuerpo[cuerpo["Sector"] == sector].sort_values("Volatilidad %", ascending=False)
         _grupo_trad(sector, sub, abierto=bool(busqueda.strip()))
     H(E.leyenda_rsi(lo, hi))
-    st.caption("Medias móviles: % del precio respecto a su promedio de 30, 50 y 200 ruedas. Verde = precio por encima de la media "
+    st.caption("EMA (media móvil exponencial): % del precio respecto a su EMA de 21, 30, 150 y 200 ruedas. La EMA pondera más "
+               "las ruedas recientes que la media simple, así reacciona antes a los cambios. Verde = precio por encima de la media "
                "(tendencia alcista); rojo = por debajo (bajista). Cuanto más largo el plazo (200), más de fondo es la tendencia. "
                "RSI 45 min: velas de 45 minutos armadas desde datos de 15 min (Yahoo, pueden tener demora); fuera del horario de mercado muestra la última rueda. "
                "Volatilidad: desvío de retornos diarios de 60 ruedas, anualizado; descartar las de baja volatilidad evita activos que casi no se mueven. "
@@ -2041,6 +2133,7 @@ with tab2:
     H('<div class="eyebrow m">Análisis fundamental</div><div class="h2">Dividendos y valuación</div>')
     busqueda_d, favs_d = controles_busqueda_fav(tabla, "div", gestionar=False)
     st.caption("Tus favoritas (★) se eligen en la pestaña «CEDEARs · Trading» y también aparecen primero acá.")
+    seccion_calendario_balances()
     seccion_indices_fundamental()
     # Para no pedirle datos fundamentales a Yahoo de los 250+ tickers (lento), solo traemos los de
     # las que pasan el filtro de volumen más las favoritas. El resto no se muestra en esta pestaña.
