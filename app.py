@@ -578,31 +578,77 @@ EMPRESAS_BALANCE = {
 }
 
 
-@st.cache_data(persist="disk", ttl=12 * 3600, show_spinner="Buscando fechas de balances...")
+def _col(df, parte):
+    return next((c for c in df.columns if parte.lower() in str(c).lower()), None)
+
+
+@st.cache_data(persist="disk", ttl=6 * 3600, show_spinner="Buscando fechas de balances...")
 def calendario_balances(tickers, dia=None):
-    """Próxima fecha de presentación de balance (earnings) por ticker. dict ticker -> Timestamp.
-    Yahoo devuelve una ventana estimada; se toma la fecha más temprana de esa ventana."""
+    """Por ticker: próxima fecha de balance y resultado del último (sorpresa de EPS vs lo esperado).
+    dict ticker -> {prox, ult, sorpresa %, eps, esperado}. Usa earnings_dates (pasado + futuro) y,
+    si falla, el calendar de Yahoo para al menos la próxima fecha."""
     out = {}
+    hoy = pd.Timestamp.today().normalize()
     for t in tickers:
+        info = {"prox": None, "ult": None, "sorpresa": None, "eps": None, "esperado": None}
         try:
-            cal = yf.Ticker(t).calendar
-            fecha = None
-            if isinstance(cal, dict):
-                ed = cal.get("Earnings Date") or cal.get("Earnings date")
-                if ed is not None:
-                    lst = ed if isinstance(ed, (list, tuple)) else [ed]
+            ed = yf.Ticker(t).get_earnings_dates(limit=16)
+        except Exception:
+            ed = None
+        try:
+            if ed is not None and len(ed):
+                idx = pd.to_datetime(ed.index)
+                idx = idx.tz_localize(None) if getattr(idx, "tz", None) is not None else idx
+                ed = ed.copy()
+                ed.index = idx.normalize()
+                rep_c, sur_c, est_c = _col(ed, "Reported"), _col(ed, "Surprise"), _col(ed, "Estimate")
+                fut = ed[ed.index >= hoy]
+                if len(fut):
+                    info["prox"] = fut.index.min()
+                pas = ed[ed.index < hoy].sort_index()
+                if rep_c:
+                    pas = pas[pas[rep_c].notna()]
+                if len(pas):
+                    last = pas.index.max(); row = pas.loc[last]
+                    if isinstance(row, pd.DataFrame):
+                        row = row.iloc[0]
+                    info["ult"] = last
+                    if sur_c and pd.notna(row.get(sur_c)):
+                        info["sorpresa"] = float(row[sur_c])
+                    if rep_c and pd.notna(row.get(rep_c)):
+                        info["eps"] = float(row[rep_c])
+                    if est_c and pd.notna(row.get(est_c)):
+                        info["esperado"] = float(row[est_c])
+        except Exception:
+            pass
+        if info["prox"] is None:                 # respaldo: solo la próxima fecha por .calendar
+            try:
+                cal = yf.Ticker(t).calendar
+                fecha = None
+                if isinstance(cal, dict):
+                    e = cal.get("Earnings Date") or cal.get("Earnings date")
+                    lst = e if isinstance(e, (list, tuple)) else ([e] if e is not None else [])
                     fs = [pd.Timestamp(x) for x in lst if x is not None]
                     fecha = min(fs) if fs else None
-            elif isinstance(cal, pd.DataFrame) and not cal.empty:
-                if "Earnings Date" in cal.index:
+                elif isinstance(cal, pd.DataFrame) and not cal.empty and "Earnings Date" in cal.index:
                     fecha = pd.Timestamp(cal.loc["Earnings Date"].iloc[0])
-                elif "Earnings Date" in cal.columns:
-                    fecha = pd.Timestamp(cal["Earnings Date"].iloc[0])
-            if fecha is not None and pd.notna(fecha):
-                out[t] = pd.Timestamp(fecha).normalize().tz_localize(None)
-        except Exception:
-            continue
+                if fecha is not None and pd.notna(fecha):
+                    info["prox"] = pd.Timestamp(fecha).normalize().tz_localize(None)
+            except Exception:
+                pass
+        if info["prox"] is not None or info["ult"] is not None:
+            out[t] = info
     return out
+
+
+# Reuniones del Comité de la Fed (FOMC). La decisión de tasas se anuncia el segundo día.
+# 2026: calendario oficial. 2027: tentativo (sujeto a confirmación de la Fed).
+FOMC = [
+    ("2026-01-28", False), ("2026-03-18", False), ("2026-04-29", False), ("2026-06-17", False),
+    ("2026-07-29", False), ("2026-09-16", False), ("2026-10-28", False), ("2026-12-09", False),
+    ("2027-01-27", True), ("2027-03-17", True), ("2027-04-28", True), ("2027-06-16", True),
+    ("2027-07-28", True), ("2027-09-22", True), ("2027-11-03", True), ("2027-12-15", True),
+]
 
 
 def _preparar_componente():
@@ -1622,8 +1668,8 @@ def controles_busqueda_fav(tabla, pref, gestionar=True):
     return busqueda, set(fav_sel)
 
 
-tab1, tab2, tab_rv, tab3, tab4, tab5, tab6 = st.tabs([
-    "Análisis técnico", "Análisis fundamental", "Cartera acciones", "Fondos (FCI)", "Simulador de tasas", "Renta fija", "Mi cartera",
+tab1, tab2, tab_cal, tab_rv, tab3, tab4, tab5, tab6 = st.tabs([
+    "Análisis técnico", "Análisis fundamental", "Calendario", "Cartera acciones", "Fondos (FCI)", "Simulador de tasas", "Renta fija", "Mi cartera",
 ])
 
 close, vol = precios(tuple(TICKERS), hoy_token())
@@ -1886,48 +1932,110 @@ def seccion_indices_fundamental():
         H(E.tabla([("Índice", "l"), ("Nivel", "l"), ("Mínimo 52 sem.", "l"), ("Máximo 52 sem.", "l"), ("Posición en el rango", "l")], filas))
 
 
-def seccion_calendario_balances():
-    """Calendario de próximos balances (earnings) de las principales empresas, agrupado por sector."""
-    with st.expander("📅 Calendario de balances · cuándo presentan resultados por sector", expanded=False):
-        st.caption("Fecha estimada en que las principales empresas de cada sector presentan su balance trimestral (earnings). "
-                   "Las fechas las estima Yahoo y pueden cambiar; confirmá en tu broker.")
-        cargar = st.session_state.get("bal_cargar") or st.button(
-            "Cargar / actualizar fechas", key="bal_btn",
-            help="Trae las fechas de Yahoo. La primera vez tarda unos segundos; después quedan guardadas.")
-        if not cargar:
-            return
-        st.session_state.bal_cargar = True
-        todos = tuple(sorted({t for lst in EMPRESAS_BALANCE.values() for t in lst}))
-        fechas = calendario_balances(todos, hoy_token())
-        if not fechas:
-            st.info("No pude traer las fechas de balances ahora (Yahoo pudo limitar las consultas). Probá de nuevo en un minuto.")
-            return
-        hoy_d = pd.Timestamp.today().normalize()
-        nombre_bal = lambda t: INFO[t][0] if t in INFO else (INFO_AR[t][0] if t in INFO_AR else t)
-        hubo = False
-        for sector, lst in EMPRESAS_BALANCE.items():
-            # próximos balances (incluye los de los últimos 3 días como "recién presentado")
-            items = sorted(((t, fechas[t]) for t in lst if t in fechas and fechas[t] >= hoy_d - pd.Timedelta(days=3)),
-                           key=lambda x: x[1])
-            if not items:
-                continue
-            hubo = True
+def _nombre_bal(t):
+    return INFO[t][0] if t in INFO else (INFO_AR[t][0] if t in INFO_AR else t)
+
+
+def _resultado_chip(d):
+    """Chip verde/rojo según si el último balance superó (positivo) o no (negativo) lo esperado."""
+    s = d.get("sorpresa")
+    if (s is None or (isinstance(s, float) and pd.isna(s))) and d.get("eps") is not None and d.get("esperado"):
+        try:
+            s = (d["eps"] / d["esperado"] - 1) * 100 if d["esperado"] > 0 else None
+        except Exception:
+            s = None
+    if s is None or (isinstance(s, float) and pd.isna(s)):
+        return E.chip("Presentó (sin dato)", "flat")
+    tipo = "up" if s >= 0 else "down"
+    etq = "Superó lo esperado" if s >= 0 else "Por debajo de lo esperado"
+    return E.chip(f"{etq} · {E.num(s, 1, suf='%', signo=True)}", tipo)
+
+
+def _fecha_es(f):
+    return f"{f.day} {MESES_ES[f.month - 1]} {f.year}"
+
+
+def render_tab_calendario():
+    H('<div class="eyebrow m">Calendario del mercado</div><div class="h2">Balances y reuniones de la Fed</div>')
+    hoy_d = pd.Timestamp.today().normalize()
+
+    # --- Reuniones de la Fed (FOMC) ---
+    prox_fed = sorted((pd.Timestamp(f), tent) for f, tent in FOMC if pd.Timestamp(f) >= hoy_d)
+    if prox_fed:
+        f0, tent0 = prox_fed[0]
+        dias0 = (f0 - hoy_d).days
+        cuando0 = "es hoy" if dias0 == 0 else ("es mañana" if dias0 == 1 else f"faltan {dias0} días")
+        H(f'<div class="panel" style="padding:18px 22px;margin:4px 0 8px;border-left:4px solid #6A4FA0">'
+          f'<div class="eyebrow m">🏛️ Próxima reunión de la Fed (FOMC)</div>'
+          f'<div class="h2" style="font-size:1.9rem;margin:4px 0 2px">{_fecha_es(f0)}</div>'
+          f'<div class="sub">Decisión de tasas de interés de EE.UU. · {cuando0}'
+          f'{" · fecha tentativa" if tent0 else ""}</div></div>')
+        with st.expander(f"Ver las próximas {len(prox_fed)} reuniones de la Fed", expanded=False):
             filas = []
-            for t, f in items:
+            for f, tent in prox_fed:
                 dias = (f - hoy_d).days
-                if dias < 0:
-                    cuando, tipo = f"presentó hace {-dias} d", "flat"
-                elif dias == 0:
-                    cuando, tipo = "hoy", "up"
-                elif dias <= 7:
-                    cuando, tipo = f"en {dias} días", "up"
-                else:
-                    cuando, tipo = f"en {dias} días", "flat"
-                filas.append([E.activo(nombre_bal(t), t, t[:2]), E.esc(f.strftime("%d/%m/%Y")), E.chip(cuando, tipo)])
-            H(f'<div class="eyebrow m" style="margin-top:12px">{E.esc(sector)}</div>'
-              + E.tabla([("Empresa", "l"), ("Fecha del balance", "l"), ("Cuándo", "l")], filas))
-        if not hubo:
-            st.info("No hay balances próximos en la lista para los próximos días.")
+                nota = ' <span class="muted" style="font-size:11px">(tentativa)</span>' if tent else ""
+                filas.append([_fecha_es(f) + nota, E.chip("hoy" if dias == 0 else f"en {dias} días", "up" if dias <= 10 else "flat")])
+            H(E.tabla([("Fecha de la decisión", "l"), ("Cuándo", "l")], filas))
+    st.caption("Las reuniones de la Fed mueven las tasas de EE.UU. y suelen agitar a todos los mercados. La decisión se anuncia "
+               "el segundo (y último) día de cada reunión. Fechas 2026: calendario oficial. 2027: tentativas, sujetas a confirmación.")
+
+    st.divider()
+
+    # --- Balances (earnings) ---
+    H('<div class="eyebrow m" style="margin-top:4px">📊 Balances (earnings)</div>'
+      '<div class="h2">Cuándo presentan resultados las principales empresas</div>')
+    cargar = st.session_state.get("bal_cargar") or st.button(
+        "Cargar / actualizar balances", key="bal_btn", type="primary",
+        help="Trae de Yahoo las fechas y los últimos resultados. La primera vez tarda unos segundos; después quedan guardados.")
+    if not cargar:
+        st.info("Apretá **«Cargar / actualizar balances»** para traer las fechas de los próximos balances y el resultado de los "
+                "últimos (si superaron o no lo esperado). Tarda unos segundos la primera vez; después queda guardado.")
+        return
+    st.session_state.bal_cargar = True
+    todos = tuple(sorted({t for lst in EMPRESAS_BALANCE.values() for t in lst}))
+    data = calendario_balances(todos, hoy_token())
+    if not data:
+        st.info("No pude traer los balances ahora (Yahoo pudo limitar las consultas). Probá de nuevo en un minuto.")
+        return
+
+    busq = st.text_input("🔎 Buscar empresa", placeholder="Ej: Apple, NVDA, banco…", key="bal_busca").strip().lower()
+    coincide = lambda t: (not busq) or busq in t.lower() or busq in _nombre_bal(t).lower()
+
+    # Resultados recién presentados (últimos 6 días): acá se ve si el balance fue positivo o negativo.
+    recientes = sorted(((t, d) for t, d in data.items()
+                        if d.get("ult") is not None and 0 <= (hoy_d - d["ult"]).days <= 6 and coincide(t)),
+                       key=lambda x: x[1]["ult"], reverse=True)
+    if recientes:
+        H('<div class="eyebrow m" style="margin-top:10px">Resultados recién presentados</div>')
+        filas = [[E.activo(_nombre_bal(t), t, t[:2]), E.esc(d["ult"].strftime("%d/%m/%Y")), _resultado_chip(d)]
+                 for t, d in recientes]
+        H(E.tabla([("Empresa", "l"), ("Presentó", "l"), ("¿Positivo o negativo?", "l")], filas))
+
+    # Próximos balances por sector
+    hubo = False
+    for sector, lst in EMPRESAS_BALANCE.items():
+        items = sorted(((t, data[t]) for t in lst
+                        if t in data and data[t].get("prox") is not None
+                        and data[t]["prox"] >= hoy_d - pd.Timedelta(days=1) and coincide(t)),
+                       key=lambda x: x[1]["prox"])
+        if not items:
+            continue
+        hubo = True
+        filas = []
+        for t, d in items:
+            f = d["prox"]; dias = (f - hoy_d).days
+            cuando = "hoy" if dias == 0 else ("mañana" if dias == 1 else f"en {dias} días")
+            filas.append([E.activo(_nombre_bal(t), t, t[:2]), E.esc(f.strftime("%d/%m/%Y")),
+                          E.chip(cuando, "up" if dias <= 7 else "flat")])
+        H(f'<div class="eyebrow m" style="margin-top:16px">{E.esc(sector)} · {len(filas)}</div>'
+          + E.tabla([("Empresa", "l"), ("Próximo balance", "l"), ("Cuándo", "l")], filas))
+
+    if not hubo and not recientes:
+        st.info("No encontré empresas que coincidan con la búsqueda." if busq else "No hay balances próximos en la lista por ahora.")
+    st.caption("Fechas y resultados provistos por Yahoo; pueden cambiar, confirmá en tu broker. **«Superó / por debajo de lo esperado»** "
+               "compara la ganancia por acción (EPS) reportada contra la que esperaba el mercado: superar suele leerse como un balance "
+               "positivo y quedar por debajo, negativo. Informativo, no es recomendación de inversión.")
 
 
 # --- 1. CEDEARs: trading ------------------------------------------------------
@@ -2133,7 +2241,6 @@ with tab2:
     H('<div class="eyebrow m">Análisis fundamental</div><div class="h2">Dividendos y valuación</div>')
     busqueda_d, favs_d = controles_busqueda_fav(tabla, "div", gestionar=False)
     st.caption("Tus favoritas (★) se eligen en la pestaña «CEDEARs · Trading» y también aparecen primero acá.")
-    seccion_calendario_balances()
     seccion_indices_fundamental()
     # Para no pedirle datos fundamentales a Yahoo de los 250+ tickers (lento), solo traemos los de
     # las que pasan el filtro de volumen más las favoritas. El resto no se muestra en esta pestaña.
@@ -2241,6 +2348,10 @@ with tab2:
         "**¿Cara o barata?** Compara el P/E contra la mediana de su sector en esta lista (barata <0,8× · cara >1,2×). "
         "Es una comparación **relativa**, no un valor intrínseco: una acción puede ser barata porque se esperan ganancias menores."
     )
+
+# --- 2a. Calendario: balances + reuniones de la Fed ---------------------------
+with tab_cal:
+    render_tab_calendario()
 
 # --- 2b. Renta variable: cartera de acciones (riesgo + diversificación + CAPM) ----------------
 with tab_rv:
